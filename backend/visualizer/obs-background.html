@@ -174,7 +174,7 @@ canvas{display:block;width:100%;height:100%}
   let lastFrame=0,flowClock=0,simPhase=0,activity=0,driftActivity=0,driftLevel=0,desiredRhythm=0,driftRhythm=0,phraseLevel=0;
   const bands=new Float32Array(48),music=new Float32Array(4),desiredBands=new Float32Array(48),desiredMusic=new Float32Array(4);
   const clouds=new Float32Array(16),motion=new Float32Array(4),lightEnergy=new Float32Array(4);
-  const lights=Array.from({length:LIGHT_COUNT},()=>({born:-100,cloud:0,strength:0}));
+  const lights=Array.from({length:LIGHT_COUNT},()=>({born:-100,cloud:0,strength:0,hitDuration:.30}));
   const energy=new Float32Array(4),desiredEnergy=new Float32Array(4),balance=new Float32Array(4),desiredBalance=new Float32Array(4),sizes=new Float32Array([.94,.94,.94,.94]);
   // Fixed animation state: retarget from the current position AND velocity.
   // Beats may flash quickly; the gas volume itself has gentle, bounded inertia.
@@ -196,12 +196,12 @@ canvas{display:block;width:100%;height:100%}
   // A slow local reference separates rhythmic dynamics from a sustained bed.
   const desiredAmplitude=new Float64Array(4),amplitudeEnvelope=new Float64Array(4),amplitudeReference=new Float64Array(4);
   const dance=new Float32Array(4),danceVelocity=new Float64Array(4),flowDrive=new Float64Array(4);
-  // Separate fast size accents from slow spectral dominance and material flow.
-  // Four fixed springs: no new GPU objects, histories or per-beat allocations.
-  const thumps=new Float32Array(4),thumpVelocity=new Float64Array(4);
-  // A held bass spectral shift can gently breathe even without a volume onset.
-  // This is a coarse spectral-centre cue, not pitch/instrument identification.
-  let bassNoteReady=false,bassCentre=0,bassAnchor=0,bassCandidate=0,bassHeld=0,bassNoteAt=-Infinity;
+  // Discrete hit motion is separate from the continuous phrase sizes, lights
+  // and material flow. Seven actual intervals per region only tune release;
+  // they never schedule a predicted hit. Fixed storage, no per-hit allocations.
+  const thumps=new Float32Array(4),thumpVelocity=new Float64Array(4),thumpTargets=new Float32Array(4);
+  const hitTimes=new Float64Array(4).fill(-Infinity),hitIntervals=new Float64Array(28),hitScratch=new Float64Array(7);
+  const hitCounts=new Uint8Array(4),hitPositions=new Uint8Array(4);
   const materialClock=new Float64Array(4),material=new Float32Array(16);
   let amplitudeReady=false,desiredTempo=0,desiredConfidence=0;
   // 45 seconds at 2 Hz: power, four regional powers, confidence-weighted
@@ -275,8 +275,29 @@ canvas{display:block;width:100%;height:100%}
   function birth(cloud,strength,born){
     if(strength<.004)return;
     const slot=lights.find(light=>born-light.born>=1.9||light.strength===0);
-    if(slot){slot.cloud=cloud;slot.strength=Math.min(1,strength);slot.born=born;}
+    if(slot){slot.cloud=cloud;slot.strength=Math.min(1,strength);slot.born=born;slot.hitDuration=hitDuration(cloud,born);}
   }
+  function clearHitTiming(){hitTimes.fill(-Infinity);hitIntervals.fill(0);hitCounts.fill(0);hitPositions.fill(0);}
+  function hitDuration(cloud,born){
+    const gap=born-hitTimes[cloud];
+    if(gap>.10&&gap<1.5){
+      hitIntervals[cloud*7+hitPositions[cloud]]=gap;
+      hitPositions[cloud]=(hitPositions[cloud]+1)%7;hitCounts[cloud]=Math.min(7,hitCounts[cloud]+1);
+    }else if(gap>=1.5){hitCounts[cloud]=hitPositions[cloud]=0;}
+    hitTimes[cloud]=Math.max(hitTimes[cloud],born);
+    const count=hitCounts[cloud];
+    if(!count)return .30;
+    // Small in-place insertion sort into reusable scratch. A syncopated pair
+    // cannot instantly resize every release, and no global tempo alias is used.
+    for(let i=0;i<count;i++){
+      const value=hitIntervals[cloud*7+i];let j=i;
+      while(j>0&&hitScratch[j-1]>value){hitScratch[j]=hitScratch[j-1];j--;}
+      hitScratch[j]=value;
+    }
+    const period=(hitScratch[Math.floor((count-1)/2)]+hitScratch[Math.floor(count/2)])*.5;
+    return Math.max(.12,Math.min(.30,period*.72));
+  }
+  const easeHit=t=>t*t*t*(10+t*(-15+6*t));
   const clamp=value=>Math.max(0,Math.min(1,value));
   function settle(values,velocities,index,target,frequency,dt,maxSpeed=Infinity,maxAcceleration=Infinity){
     if(dt<=0)return;
@@ -507,34 +528,9 @@ canvas{display:block;width:100%;height:100%}
     }
     return true;
   }
-  function trackBassNote(dt,now){
-    if(!amplitudeReady||desiredAmplitude[0]<.018){bassNoteReady=false;bassHeld=0;bassNoteAt=-Infinity;return;}
-    let total=0,weighted=0;
-    for(let k=0;k<14;k++){
-      // Invert the helper's -70..-10 dB display mapping to a power proxy.
-      // Subtract the floor so silence cannot move the spectral centre.
-      const power=Math.max(0,Math.pow(10,6*desiredBands[k]-7)-1e-7);
-      total+=power;weighted+=power*k;
-    }
-    if(total<1e-6){bassNoteReady=false;bassHeld=0;return;}
-    const centre=weighted/total;
-    if(!bassNoteReady){bassCentre=bassAnchor=bassCandidate=centre;bassHeld=0;bassNoteReady=true;return;}
-    bassCentre+=(centre-bassCentre)*(1-Math.exp(-dt/.12));
-    // About three semitones in these logarithmic bands. Minor vibrato and
-    // brief harmonics do not become a new visual beat; require a held change.
-    if(Math.abs(bassCentre-bassAnchor)<1.25){bassHeld=0;bassCandidate=bassCentre;return;}
-    if(Math.abs(bassCentre-bassCandidate)>.45){bassCandidate=bassCentre;bassHeld=0;return;}
-    bassHeld+=dt;
-    if(bassHeld<.16||now-bassNoteAt<.90)return;
-    // Let the display spectrum settle after a confirmed bass onset without
-    // adding a second, delayed accent for that same note or kick.
-    for(const light of lights)if(light.cloud===0&&light.strength>0&&now-light.born>=0&&now-light.born<.85){bassAnchor=bassCandidate=bassCentre;bassHeld=0;return;}
-    bassNoteAt=now+delay;bassAnchor=bassCentre;bassCandidate=bassCentre;bassHeld=0;
-  }
   function update(dt,now){
     if(simulated)simulate(dt,now);
-    if(now-lastReceived>.50){desiredMusic.fill(0);desiredBands.fill(0);desiredEnergy.fill(0);desiredBalance.fill(0);desiredAmplitude.fill(0);amplitudeReady=false;activity=0;desiredRhythm=desiredTempo=desiredConfidence=0;}
-    trackBassNote(dt,now);
+    if(now-lastReceived>.50){if(amplitudeReady)clearHitTiming();desiredMusic.fill(0);desiredBands.fill(0);desiredEnergy.fill(0);desiredBalance.fill(0);desiredAmplitude.fill(0);amplitudeReady=false;activity=0;desiredRhythm=desiredTempo=desiredConfidence=0;}
     for(let i=0;i<4;i++)music[i]+=(desiredMusic[i]-music[i])*(1-Math.exp(-dt/(desiredMusic[i]>music[i]?.022:.23)));
     for(let i=0;i<48;i++)bands[i]+=(desiredBands[i]-bands[i])*(1-Math.exp(-dt/(desiredBands[i]>bands[i]?.025:.19)));
     // Slow, advected flow rather than four points on the same circular orbit.
@@ -548,7 +544,7 @@ canvas{display:block;width:100%;height:100%}
     const loud=clamp((driftLevel-.40)/.50),intensity=loud*loud*(3-2*loud);
     const speed=1+.28*driftLevel+.20*driftActivity+.24*intensity+.20*intensity*driftRhythm;
     flowClock+=dt*speed;
-    pulse.fill(0);lightTargets.fill(0);
+    pulse.fill(0);lightTargets.fill(0);thumpTargets.fill(0);
     for(const light of lights){
       const age=now-light.born;
       if(age>=1.9)light.strength=0;
@@ -557,6 +553,17 @@ canvas{display:block;width:100%;height:100%}
       const fade=clamp((age-1.45)/.45);
       lightTargets[light.cloud]+=attack*(Math.exp(-age/.23)+.16*Math.exp(-age/.75))*(1-fade*fade*(3-2*fade))*light.strength;
       pulse[light.cloud]+=attack*Math.exp(-age/.095)*light.strength;
+      // One visible swell per confirmed attack, returning to zero before the
+      // next regular hit. Max (not sum) keeps dense overlaps off a raised floor.
+      // A quintic envelope has zero slope/acceleration at its joins; the spring
+      // below also preserves current position and velocity when hits overlap.
+      if(age<light.hitDuration){
+        const rise=Math.min(.055,light.hitDuration*.28);
+        const progress=(age-rise)/(light.hitDuration-rise);
+        const envelope=age<rise?easeHit(age/rise):1-easeHit(progress*(2-progress));
+        const strength=.75*Math.sqrt(light.strength);
+        thumpTargets[light.cloud]=Math.max(thumpTargets[light.cloud],strength*envelope);
+      }
     }
     let balanceSum=0;
     for(let i=0;i<4;i++){
@@ -595,13 +602,12 @@ canvas{display:block;width:100%;height:100%}
       const dynamics=clamp(2.6*Math.max(0,relative-.06));
       const attack=pulse[i]/Math.sqrt(1+(pulse[i]/.9)**2);
       const groove=.78*dynamics*Math.sqrt(energy[i])+.22*attack;
-      // Confirmed attacks keep their timing even when the phrase reference has
-      // adapted to a compressed, continuously loud mix. Real loud/quiet motion
-      // still contributes if an onset is missed. Never invent a BPM pulse.
-      const noteAge=now-bassNoteAt;
-      const note=i===0&&noteAge>=0?.30*(1-Math.exp(-noteAge/.06))*Math.exp(-noteAge/.34):0;
-      const thumpTarget=.85*attack+.45*dynamics*Math.sqrt(energy[i])+note;
-      settle(thumps,thumpVelocity,i,thumpTarget,28,dt,3.2,30);
+      // Sustained loudness and pitch shifts already drive the phrase size.
+      // Do not turn them into extra kicks, or reuse the lighting's decay here.
+      // Short, bounded substeps keep this faster spring well behaved after a
+      // delayed frame as well as at 60/120/144 Hz. No animation state is reset.
+      const hitSteps=Math.max(1,Math.ceil(dt*120)),hitDt=dt/hitSteps;
+      for(let step=0;step<hitSteps;step++)settle(thumps,thumpVelocity,i,thumpTargets[i],60,hitDt,10,280);
       // Absolute envelope excursion plus measured attack strength captures drums
       // becoming gentler/stronger even if pads or vocals hold total RMS steady.
       const impact=Math.max(0,levelNow-reference)+.10*attack*levelNow;
@@ -758,6 +764,7 @@ canvas{display:block;width:100%;height:100%}
       if(socket){socket.onclose=null;socket.onmessage=null;socket.close();socket=null;}
       lastIds=null;lastCloudIds=null;lastReceived=-Infinity;amplitudeReady=false;
       clearContext();
+      clearHitTiming();thumpTargets.fill(0);thumps.fill(0);thumpVelocity.fill(0);
       for(const light of lights)light.strength=0;
     }else if(!lost){resizePending=true;if(!simulated)connect();raf=requestAnimationFrame(frame);}
   }
