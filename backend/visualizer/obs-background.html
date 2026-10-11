@@ -202,6 +202,10 @@ canvas{display:block;width:100%;height:100%}
   const bodyDurations=new Float64Array(4).fill(.34),lastBodyHits=new Float64Array(4).fill(-Infinity);
   const pressureSizes=new Float64Array([.94,.94,.94,.94]),pressureSizeVelocity=new Float64Array(4);
   let sourceReference=.16;
+  const steeringSpeed=new Float64Array([1]),steeringVelocity=new Float64Array(1);
+  const blueExpansion=new Float64Array(1),blueExpansionVelocity=new Float64Array(1),renderSizes=new Float32Array(4);
+  const blueDistances=new Float64Array(144),blueNeighbors=new Float64Array(144);
+  let previousSteeringSpeed=1,blueSupport=0,blueSizeCapacity=1.50,bluePulseCeiling=0,swapActivityFor=0;
   const lightTargets=new Float32Array(4),lightVelocity=new Float64Array(4);
   const renderEnergy=new Float32Array(4),renderEnergyVelocity=new Float64Array(4);
   const renderMusic=new Float32Array(4),renderMusicVelocity=new Float64Array(4);
@@ -260,7 +264,7 @@ canvas{display:block;width:100%;height:100%}
   const contextHistory=new Float32Array(CONTEXT_COUNT*CONTEXT_FIELDS),contextTotals=new Float64Array(CONTEXT_FIELDS),contextBucket=new Float64Array(CONTEXT_FIELDS),contextValues=new Float64Array(CONTEXT_FIELDS),contextWeighted=new Float64Array(CONTEXT_FIELDS);
   let contextFamiliarity=0;
   let contextPosition=0,contextCount=0,contextElapsed=0;
-  let sectionFast=0,sectionSlow=0,sectionCue=0,sectionOccupancy=0,exchangeCooldown=80;
+  let sectionFast=0,sectionSlow=0,sectionCue=0,sectionOccupancy=0,exchangeCooldown=0;
   // A short lull need not lower a 45-second reference. Track an actual easing
   // and rebuilding of power OR percussive impact, even over a sustained bed.
   // Fixed state only; these cues change travel paths, never the shader/pulses.
@@ -273,8 +277,9 @@ canvas{display:block;width:100%;height:100%}
   // Four reusable travel slots, not permanent color positions. An occasional
   // pair exchange uses a zero-velocity/acceleration ease and separate arcs.
   const pathSlots=new Uint8Array([0,1,2,3]),pathCentres=new Float64Array(8);
-  let exchangeA=-1,exchangeB=-1,exchangeStarted=0;
-  const EXCHANGE_DURATION=48;
+  let exchangeA=-1,exchangeB=-1,exchangeStarted=-60;
+  const EXCHANGE_DURATION=14,EXCHANGE_INTERVAL=60;
+  const exchangeWorld=new Float64Array(16);
   let lastCloudIds=null,legacyPrevious=new Float32Array(4),legacyMean=new Float32Array(4),legacyAt=new Float64Array(4);
   const presets={silence:[0,0,96],gentle:[.17,.16,78],rhythm:[.52,.65,112],intense:[.88,1,138]};
 
@@ -770,6 +775,52 @@ canvas{display:block;width:100%;height:100%}
     const rx=.69*size,ry=.53*size;
     return 1/Math.sqrt(Math.max(.001,(x/rx)**2+(y/ry)**2));
   }
+  function exchangePositions(now){
+    for(let i=0;i<4;i++){
+      const c=cloudStates[i],k=i*4;
+      exchangeWorld[k]=c.x;exchangeWorld[k+1]=c.y;exchangeWorld[k+2]=c.vx;exchangeWorld[k+3]=c.vy;
+    }
+    if(exchangeA<0)return;
+    const a=exchangeA*4,b=exchangeB*4,t=clamp((now-exchangeStarted)/EXCHANGE_DURATION),e=easeHit(t);
+    const de=30*t*t*(1-t)*(1-t)/EXCHANGE_DURATION;
+    const dx=exchangeWorld[b]-exchangeWorld[a],dy=exchangeWorld[b+1]-exchangeWorld[a+1];
+    const dvx=exchangeWorld[b+2]-exchangeWorld[a+2],dvy=exchangeWorld[b+3]-exchangeWorld[a+3];
+    const distance=Math.sqrt(dx*dx+dy*dy+.01),rate=(dx*dvx+dy*dvy)/distance;
+    const nx=dx/distance,ny=dy/distance,dnx=(dvx-nx*rate)/distance,dny=(dvy-ny*rate)/distance;
+    const arc=.12*Math.sin(Math.PI*e),darc=.12*Math.PI*Math.cos(Math.PI*e)*de;
+    const ox=-ny*arc,oy=nx*arc,ovx=-ny*darc-dny*arc,ovy=nx*darc+dnx*arc;
+    exchangeWorld[a]+=dx*e+ox;exchangeWorld[a+1]+=dy*e+oy;
+    exchangeWorld[b]-=dx*e+ox;exchangeWorld[b+1]-=dy*e+oy;
+    exchangeWorld[a+2]+=dvx*e+dx*de+ovx;exchangeWorld[a+3]+=dvy*e+dy*de+ovy;
+    exchangeWorld[b+2]-=dvx*e+dx*de+ovx;exchangeWorld[b+3]-=dvy*e+dy*de+ovy;
+  }
+  function blueCapacity(ceiling){
+    const aspect=w&&h?w/h:canvas.clientWidth/Math.max(1,canvas.clientHeight);
+    const held=1+.05*clamp(bassVisual[1]),swell=(1+.30*ceiling)*held;
+    const rx=.69*(1+.036*ceiling)*swell,ry=.53*(1-.018*ceiling)*swell;
+    for(let row=0;row<9;row++)for(let col=0;col<16;col++){
+      const sample=row*16+col,x=(col+.5)/16,y=(row+.5)/9;
+      let neighbors=0;
+      for(let i=0;i<4;i++){
+        const k=i*4,dx=(x-clouds[k])*aspect,dy=y-clouds[k+1],cos=clouds[k+2],sin=clouds[k+3];
+        const px=dx*cos+dy*sin,py=-dx*sin+dy*cos;
+        if(i===0)blueDistances[sample]=3.496*((px/rx)**2+(py/ry)**2);
+        else neighbors+=Math.exp(-3.496*((px/(.69*sizes[i]))**2+(py/(.53*sizes[i]))**2));
+      }
+      blueNeighbors[sample]=neighbors;
+    }
+    let low=.25,high=4;
+    // Limit blue to half of the cloud blend without changing the shader.
+    for(let iteration=0;iteration<15;iteration++){
+      const size=(low+high)*.5,inverse=1/(size*size);let area=0;
+      for(let k=0;k<144;k++){
+        const blue=Math.exp(-blueDistances[k]*inverse);
+        area+=blue/(blue+blueNeighbors[k]);
+      }
+      if(area/144>.495)high=size;else low=size;
+    }
+    return low;
+  }
   function update(dt,now){
     if(simulated)simulate(dt,now);
     if(now-lastReceived>.50){if(amplitudeReady)clearHitTiming();desiredMusic.fill(0);desiredBands.fill(0);desiredEnergy.fill(0);desiredBalance.fill(0);desiredAmplitude.fill(0);amplitudeReady=false;activity=0;desiredRhythm=desiredTempo=desiredConfidence=0;}
@@ -799,7 +850,21 @@ canvas{display:block;width:100%;height:100%}
     const rhythm=clamp(Math.max(desiredRhythm,.65*clamp(bassHitPressure/1.8)+.35*hitConfidenceAt(4,now)));
     const driveTarget=loudness*(.40+.40*rhythm+.20*clamp(bassVisual[0]));
     settle(sceneState,sceneVelocity,0,driveTarget,8,dt,1.6,8);
-    const speed=.72+.16*driftLevel+.08*driftActivity;
+    let recentAttacks=0;
+    for(const light of lights){
+      const age=now-light.bodyBorn;
+      if(light.bodyStrength&&age>=0&&age<1.9)recentAttacks+=light.bodyStrength*Math.exp(-age/.45)*(light.cloud===0?1.2:light.cloud===2?1:.6);
+    }
+    const percussion=1-Math.exp(-recentAttacks*1.3);
+    const presence=clamp((amplitude-.010)/.060);
+    const motionLoudness=Math.max(loudness,clamp((music[0]-.20)/.65));
+    const motionRhythm=clamp(.80*percussion+.20*rhythm);
+    const motionDrive=motionLoudness*(.20+.80*motionRhythm);
+    const speedTarget=.12+presence*(.88+5.2*motionDrive*motionDrive);
+    const steeringSteps=Math.max(1,Math.ceil(dt*120)),steeringDt=dt/steeringSteps;
+    for(let step=0;step<steeringSteps;step++)settle(steeringSpeed,steeringVelocity,0,speedTarget,3.8,steeringDt,4,9);
+    const speed=Math.max(.12,steeringSpeed[0]);
+    const momentumScale=Math.pow(speed/previousSteeringSpeed,.70);previousSteeringSpeed=speed;
     flowClock+=dt*speed;
     pulse.fill(0);lightTargets.fill(0);thumpTargets.fill(0);
     const hitSteps=Math.min(8,Math.max(1,Math.ceil(dt*120))),hitDt=dt/hitSteps;
@@ -844,6 +909,13 @@ canvas{display:block;width:100%;height:100%}
       phraseBalance[i]+=(desiredBalance[i]-phraseBalance[i])*(1-Math.exp(-dt/.75));
       balanceSum+=phraseBalance[i];
     }
+    const bassShare=phraseBalance[0]/Math.max(.0001,balanceSum);
+    const bassDominance=clamp((bassShare-.36)/.36);
+    const bassSustain=Math.max(clamp((bassHitPressure-.70)/1.60),bassHoldTarget);
+    const blueEvidence=bassDominance*bassSustain*clamp(bodyEnergy[0]*2.5);
+    blueSupport+=(blueEvidence-blueSupport)*(1-Math.exp(-dt/(blueEvidence>blueSupport?1.8:.45)));
+    const blueTarget=easeHit(clamp((blueSupport-.15)/.65));
+    for(let step=0;step<steeringSteps;step++)settle(blueExpansion,blueExpansionVelocity,0,blueTarget,3,steeringDt,.40,.85);
     let meanMass=0,impactSample=0;
     for(let i=0;i<4;i++){
       energy[i]+=(desiredEnergy[i]-energy[i])*(1-Math.exp(-dt/(desiredEnergy[i]>energy[i]?.035:.30)));
@@ -853,7 +925,8 @@ canvas{display:block;width:100%;height:100%}
       // root flattened it so weak regions looked almost as large as the bass.
       cloudMass[i]=.75*bodyEnergy[i]+.25*phraseLevel*Math.pow(share,.85);
       meanMass+=cloudMass[i]*.25;
-      const targetSize=Math.min(1.50,.84+.46*bodyEnergy[i]+.12*cloudMass[i]);
+      const baseSize=Math.min(1.50,.84+.46*bodyEnergy[i]+.12*cloudMass[i]);
+      const targetSize=i===0?baseSize+(blueSizeCapacity-baseSize)*clamp(blueExpansion[0]):baseSize;
       sizeTargets[i]+=(targetSize-sizeTargets[i])*(1-Math.exp(-dt/(absenceFor[i]>.06?.065:.12)));
       const bodySteps=Math.max(1,Math.ceil(dt*120)),bodyDt=dt/bodySteps;
       for(let step=0;step<bodySteps;step++){
@@ -906,16 +979,14 @@ canvas{display:block;width:100%;height:100%}
       settle(renderBands,renderBandVelocity,i,bands[i],18,dt,1.6,12);
       settle(edgeBands,edgeBandVelocity,i,renderBands[i],7,dt);
     }
-    if(exchangeA>=0&&flowClock-exchangeStarted>=EXCHANGE_DURATION){
+    if(exchangeA>=0&&now-exchangeStarted>=EXCHANGE_DURATION){
+      const a=cloudStates[exchangeA],b=cloudStates[exchangeB],x=a.x,y=a.y,vx=a.vx,vy=a.vy;
+      a.x=b.x;a.y=b.y;a.vx=b.vx;a.vy=b.vy;b.x=x;b.y=y;b.vx=vx;b.vy=vy;
       const old=pathSlots[exchangeA];pathSlots[exchangeA]=pathSlots[exchangeB];pathSlots[exchangeB]=old;
       exchangeA=exchangeB=-1;
-      // Allow the finished exchange to settle before any next pair starts.
-      exchangeCooldown=Math.max(exchangeCooldown,20);
     }
-    // Musical section cues, never a periodic/random position-swap timer.
-    // Compare a quick power envelope against recency-weighted 45-second context.
-    // Short-term onsets remain separate, so this context cannot delay a beat.
-    exchangeCooldown=Math.max(0,exchangeCooldown-dt);
+    // Musical activity can exchange a pair at most once per real minute.
+    exchangeCooldown=Math.max(0,EXCHANGE_INTERVAL-(now-exchangeStarted));
     let sectionPower=0,novelty=0,leader=0,regionalDrive=0;
     for(let i=0;i<4;i++)sectionPower+=desiredAmplitude[i]*desiredAmplitude[i];
     if(amplitudeReady)rememberContext(dt);
@@ -939,7 +1010,10 @@ canvas{display:block;width:100%;height:100%}
     const cue=amplitudeReady&&contextCount>=12&&sectionFast>.02&&active&&((sectionRise>.13&&sectionOccupancy>.20)||novelty>.24);
     sectionCue=cue?Math.min(3.1,sectionCue+dt):Math.max(0,sectionCue-dt*2);
     const rebuilt=trackRebuild(dt,active,sectionPower,impactSample);
-    if(exchangeA<0&&exchangeCooldown===0&&(rebuilt||(cue&&sectionCue>=2+(1-contextFamiliarity)))){
+    const busy=amplitudeReady&&presence>.30&&motionDrive>.52&&percussion>.35;
+    swapActivityFor=busy?Math.min(8,swapActivityFor+dt):Math.max(0,swapActivityFor-dt*2);
+    const busySwap=contextCount>=12&&swapActivityFor>=4;
+    if(exchangeA<0&&exchangeCooldown===0&&(rebuilt||busySwap||(cue&&sectionCue>=2+(1-contextFamiliarity)))){
       if(rebuilt)leader=rebuildLeader;
       else if(novelty<.10){for(let i=1;i<4;i++)if(cloudMass[i]>cloudMass[leader])leader=i;}
       let partner=-1,best=Infinity;
@@ -948,32 +1022,20 @@ canvas{display:block;width:100%;height:100%}
         const cost=distance/(1+2*Math.max(0,cloudMass[leader]-cloudMass[i]));
         if(cost<best){best=cost;partner=i;}
       }
-      exchangeA=leader;exchangeB=partner;exchangeStarted=flowClock;
-      exchangeCooldown=130;sectionCue=0;consumeRebuild();
+      exchangeA=leader;exchangeB=partner;exchangeStarted=now;
+      exchangeCooldown=EXCHANGE_INTERVAL;sectionCue=0;consumeRebuild();
     }
     for(let i=0;i<4;i++){
       const slot=pathSlots[i],phase=cloudPathPhases[slot];
       pathCentres[i*2]=.5+.32*Math.cos(flowClock*.013+phase)+.07*Math.sin(flowClock*.031+slot*1.7);
       pathCentres[i*2+1]=.5+.32*Math.sin(flowClock*.017+phase)+.07*Math.cos(flowClock*.029+slot*1.9);
     }
-    if(exchangeA>=0){
-      const t=clamp((flowClock-exchangeStarted)/EXCHANGE_DURATION);
-      const eased=t*t*t*(10+t*(-15+6*t));
-      const ax=pathCentres[exchangeA*2],ay=pathCentres[exchangeA*2+1];
-      const bx=pathCentres[exchangeB*2],by=pathCentres[exchangeB*2+1];
-      const dx=bx-ax,dy=by-ay,distance=Math.max(.10,Math.hypot(dx,dy));
-      const arc=.12*Math.sin(Math.PI*eased),ox=-dy/distance*arc,oy=dx/distance*arc;
-      pathCentres[exchangeA*2]=ax+(bx-ax)*eased+ox;
-      pathCentres[exchangeA*2+1]=ay+(by-ay)*eased+oy;
-      pathCentres[exchangeB*2]=bx+(ax-bx)*eased-ox;
-      pathCentres[exchangeB*2+1]=by+(ay-by)*eased-oy;
-    }
     for(let i=0;i<4;i++){
       const c=cloudStates[i],px=c.x*Math.PI,py=c.y*Math.PI;
       const tx=pathCentres[i*2],ty=pathCentres[i*2+1];
       const pathPull=5+1.5*cloudMass[i];
-      let fx=(tx-c.x)*pathPull+.055*Math.sin(px+flowClock*.012)*Math.cos(py+flowClock*.017);
-      let fy=(ty-c.y)*pathPull-.055*Math.cos(px+flowClock*.012)*Math.sin(py+flowClock*.017);
+      let fx=(tx-c.x)*pathPull+.30*Math.sin(px+flowClock*.012)*Math.cos(py+flowClock*.017);
+      let fy=(ty-c.y)*pathPull-.30*Math.cos(px+flowClock*.012)*Math.sin(py+flowClock*.017);
       fx+=Math.max(0,.14-c.x)*28-Math.max(0,c.x-.86)*28;
       fy+=Math.max(0,.14-c.y)*28-Math.max(0,c.y-.86)*28;
       for(let j=0;j<4;j++)if(i!==j){
@@ -988,16 +1050,18 @@ canvas{display:block;width:100%;height:100%}
       }
       const length=Math.max(1,Math.hypot(fx,fy));flowForces[i*2]=fx/length;flowForces[i*2+1]=fy/length;
     }
-    const exchangePhase=exchangeA>=0?clamp((flowClock-exchangeStarted)/EXCHANGE_DURATION):0;
-    const exchangeTravel=1+2*easeHit(clamp(exchangePhase/.16))*easeHit(clamp((1-exchangePhase)/.16));
+    const exchangePhase=exchangeA>=0?clamp((now-exchangeStarted)/EXCHANGE_DURATION):0;
+    const exchangeTravel=1+easeHit(clamp(exchangePhase/.12))*easeHit(clamp((1-exchangePhase)/.12));
     for(let i=0;i<4;i++){
       const c=cloudStates[i],travel=i===exchangeA||i===exchangeB?exchangeTravel:1;
-      const ease=1-Math.exp(-dt/5.5);
+      const ease=1-Math.exp(-dt*travel/(3.5-2*clamp(sceneState[0])));
       const response=1+.32*(meanMass-cloudMass[i]);
-      c.vx+=(flowForces[i*2]*.0035*speed*response*travel-c.vx)*ease;c.vy+=(flowForces[i*2+1]*.0035*speed*response*travel-c.vy)*ease;
+      c.vx*=momentumScale;c.vy*=momentumScale;
+      c.vx+=(flowForces[i*2]*.0052*speed*response*travel-c.vx)*ease;c.vy+=(flowForces[i*2+1]*.0052*speed*response*travel-c.vy)*ease;
       c.x+=c.vx*dt;c.y+=c.vy*dt;
-      c.angle+=(-.08+.09*Math.sin(flowClock*.012+i*1.9)+c.vy*5-c.angle)*(1-Math.exp(-dt/6));
+      c.angle+=(-.08+.16*Math.sin(flowClock*.012+i*1.9)+c.vy*10-c.angle)*(1-Math.exp(-dt/4));
     }
+    exchangePositions(now);
     pressureTargets.fill(0);
     for(let i=0;i<4;i++)for(let j=i+1;j<4;j++){
       const a=cloudStates[i],b=cloudStates[j],dx=a.x-b.x,dy=a.y-b.y,distance=Math.hypot(dx,dy);
@@ -1020,11 +1084,22 @@ canvas{display:block;width:100%;height:100%}
         settle(pressureOffsets,pressureVelocity,k,pressureTargets[k],3.4,pressureDt,.009,.025);
         settle(pressureOffsets,pressureVelocity,k+1,pressureTargets[k+1],3.4,pressureDt,.009,.025);
       }
-      const x=c.x+pressureOffsets[k],y=c.y+pressureOffsets[k+1];
+      const x=exchangeWorld[i*4]+pressureOffsets[k],y=exchangeWorld[i*4+1]+pressureOffsets[k+1];
       clouds[i*4]=x;clouds[i*4+1]=y;
       clouds[i*4+2]=Math.cos(c.angle);clouds[i*4+3]=Math.sin(c.angle);
       material[i*4]=.28*(x-materialOrigins[i*2]);material[i*4+1]=.28*(y-materialOrigins[i*2+1]);
-      material[i*4+2]=c.vx+pressureVelocity[k];material[i*4+3]=c.vy+pressureVelocity[k+1];
+      material[i*4+2]=exchangeWorld[i*4+2]+pressureVelocity[k];material[i*4+3]=exchangeWorld[i*4+3]+pressureVelocity[k+1];
+    }
+    renderSizes.set(sizes);
+    bluePulseCeiling+=(thumps[0]-bluePulseCeiling)*(1-Math.exp(-dt/(thumps[0]>bluePulseCeiling?.025:1.25)));
+    if(blueExpansion[0]>.0001){
+      const ceiling=clamp(bluePulseCeiling+.06),current=clamp(thumps[0]);
+      blueSizeCapacity=blueCapacity(ceiling);
+      const ratio=(1+.30*ceiling)/(1+.30*current);
+      const pulseCapacity=blueSizeCapacity*ratio*Math.min((1+.036*ceiling)/(1+.036*current),(1-.018*ceiling)/(1-.018*current));
+      const extra=clamp(blueExpansion[0]),width=.020*extra,size=sizes[0];
+      const capped=.5*(size+pulseCapacity-Math.sqrt((size-pulseCapacity)**2+width*width));
+      renderSizes[0]=size+(capped-size)*easeHit(clamp(extra*4));
     }
     // Double-precision phases become bounded GPU uniforms: smooth even after days.
     motion.set([Math.sin(flowClock*.019),Math.cos(flowClock*.013),Math.sin(flowClock*.011),Math.cos(flowClock*.017)]);
@@ -1032,7 +1107,7 @@ canvas{display:block;width:100%;height:100%}
   }
   function render(){
     gl.useProgram(programs[0]);gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,w,h);
-    gl.uniform2f(loc.res,w,h);gl.uniform4fv(loc.motion,motion);gl.uniform4fv(loc.clouds,clouds);gl.uniform4fv(loc.material,material);gl.uniform4fv(loc.dance,dance);gl.uniform4fv(loc.thumps,thumps);gl.uniform2f(loc.bass,clamp(bassVisual[0]),clamp(bassVisual[1]));gl.uniform4fv(loc.music,renderMusic);gl.uniform4fv(loc.energy,renderEnergy);gl.uniform4fv(loc.sizes,sizes);gl.uniform1fv(loc.bands,renderBands);gl.uniform4fv(loc.lights,lightEnergy);
+    gl.uniform2f(loc.res,w,h);gl.uniform4fv(loc.motion,motion);gl.uniform4fv(loc.clouds,clouds);gl.uniform4fv(loc.material,material);gl.uniform4fv(loc.dance,dance);gl.uniform4fv(loc.thumps,thumps);gl.uniform2f(loc.bass,clamp(bassVisual[0]),clamp(bassVisual[1]));gl.uniform4fv(loc.music,renderMusic);gl.uniform4fv(loc.energy,renderEnergy);gl.uniform4fv(loc.sizes,renderSizes);gl.uniform1fv(loc.bands,renderBands);gl.uniform4fv(loc.lights,lightEnergy);
     gl.uniform4fv(loc.edgeEnergy,edgeEnergy);gl.uniform4fv(loc.edgeLights,edgeLights);gl.uniform4fv(loc.edgeMusic,edgeMusic);gl.uniform1fv(loc.edgeBands,edgeBands);
     gl.drawArrays(gl.TRIANGLES,0,3);
     gpuFence=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0);
