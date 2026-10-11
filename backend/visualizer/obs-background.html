@@ -180,6 +180,10 @@ canvas{display:block;width:100%;height:100%}
   const edgeBands=new Float32Array(48),edgeBandVelocity=new Float64Array(48);
   const cloudStates=[{x:.19,y:.80,vx:0,vy:0,angle:-.08},{x:.81,y:.80,vx:0,vy:0,angle:-.08},{x:.19,y:.20,vx:0,vy:0,angle:-.08},{x:.81,y:.20,vx:0,vy:0,angle:-.08}];
   const pulse=new Float32Array(4);
+  // A separate, bounded pressure response marks measured attacks without
+  // feeding fast transients into the slow phrase or neighbor-flow solver.
+  // All storage is fixed; no new GPU objects, audio buffers, or frame history.
+  const beatMotion=new Float64Array(4),beatVelocity=new Float64Array(4),renderSizes=new Float32Array(4);
   const flowForces=new Float32Array(8);
   const cloudPathPhases=[3*Math.PI/4,Math.PI/4,5*Math.PI/4,7*Math.PI/4];
   let lastCloudIds=null,legacyPrevious=new Float32Array(4),legacyMean=new Float32Array(4),legacyAt=new Float64Array(4);
@@ -345,7 +349,7 @@ canvas{display:block;width:100%;height:100%}
       const attack=1-Math.exp(-age/.018);
       const fade=clamp((age-1.45)/.45);
       lightTargets[light.cloud]+=attack*(Math.exp(-age/.23)+.16*Math.exp(-age/.75))*(1-fade*fade*(3-2*fade))*light.strength;
-      pulse[light.cloud]+=attack*Math.exp(-age/.32)*light.strength;
+      pulse[light.cloud]+=attack*Math.exp(-age/.095)*light.strength;
     }
     let balanceSum=0;
     for(let i=0;i<4;i++){
@@ -358,9 +362,11 @@ canvas{display:block;width:100%;height:100%}
       energy[i]+=(desiredEnergy[i]-energy[i])*(1-Math.exp(-dt/(desiredEnergy[i]>energy[i]?.035:.30)));
       balance[i]+=(desiredBalance[i]-balance[i])*(1-Math.exp(-dt/.38));
       const share=phraseBalance[i]/Math.max(.0001,balanceSum);
-      cloudMass[i]=phraseLevel*Math.sqrt(share);
+      // Power share already measures relative spectral dominance. A square
+      // root flattened it so weak regions looked almost as large as the bass.
+      cloudMass[i]=phraseLevel*Math.pow(share,.85);
       meanMass+=cloudMass[i]*.25;
-      const targetSize=.84+.18*phraseEnergy[i]+.38*cloudMass[i];
+      const targetSize=Math.min(1.58,.84+.10*phraseEnergy[i]+.72*cloudMass[i]);
       // The gas follows a phrase, not every transient. Bound both size speed
       // and acceleration; retargeting never resets existing position/velocity.
       sizeTargets[i]+=(targetSize-sizeTargets[i])*(1-Math.exp(-dt/.30));
@@ -369,8 +375,14 @@ canvas{display:block;width:100%;height:100%}
       // lighting still marks the beat rather than sharing the slower geometry.
       // A bounded, monotonic soft knee preserves attack timing but prevents
       // many overlapping decays from turning a dense mix into competing blasts.
-      const light=lightTargets[i]/Math.sqrt(1+(lightTargets[i]/1.35)**2);
+      // Short measured attacks provide contrast; long overlapping tails no
+      // longer dominate a dense passage as an almost permanent bright glow.
+      const accent=.55*lightTargets[i]+.85*pulse[i];
+      const light=accent/Math.sqrt(1+(accent/1.35)**2);
       settle(lightEnergy,lightVelocity,i,light,70,dt);
+      const pressure=pulse[i]/Math.sqrt(1+(pulse[i]/.9)**2);
+      settle(beatMotion,beatVelocity,i,pressure,22,dt,1.2,14);
+      renderSizes[i]=sizes[i]+.085*beatMotion[i];
       // Shared colors evolve on a phrase-scale envelope, independently of the
       // quick core pulse. Retargeting preserves velocity through dense rhythms.
       settle(edgeEnergy,edgeEnergyVelocity,i,phraseEnergy[i],7,dt);
@@ -400,6 +412,8 @@ canvas{display:block;width:100%;height:100%}
       }
       const length=Math.max(1,Math.hypot(fx,fy));flowForces[i*2]=fx/length;flowForces[i*2+1]=fy/length;
     }
+    let centreX=0,centreY=0;
+    for(const c of cloudStates){centreX+=c.x*.25;centreY+=c.y*.25;}
     for(let i=0;i<4;i++){
       const c=cloudStates[i],ease=1-Math.exp(-dt/3.5);
       // Retain spectral inertia even when a crowded pair saturates the force
@@ -408,7 +422,12 @@ canvas{display:block;width:100%;height:100%}
       c.vx+=(flowForces[i*2]*.0052*speed*response-c.vx)*ease;c.vy+=(flowForces[i*2+1]*.0052*speed*response-c.vy)*ease;
       c.x+=c.vx*dt;c.y+=c.vy*dt;
       c.angle+=(-.08+.16*Math.sin(flowClock*.012+i*1.9)+c.vy*10-c.angle)*(1-Math.exp(-dt/4));
-      clouds[i*4]=c.x;clouds[i*4+1]=c.y;clouds[i*4+2]=Math.cos(c.angle);clouds[i*4+3]=Math.sin(c.angle);
+      // A small outward breath on a real attack, then a smooth release.
+      // The persistent drift position/velocity never gets reset or kicked.
+      const dx=c.x-centreX,dy=c.y-centreY,distance=Math.max(.12,Math.hypot(dx,dy));
+      const breath=.012*beatMotion[i];
+      clouds[i*4]=c.x+dx/distance*breath;clouds[i*4+1]=c.y+dy/distance*breath;
+      clouds[i*4+2]=Math.cos(c.angle);clouds[i*4+3]=Math.sin(c.angle);
     }
     // Double-precision phases become bounded GPU uniforms: smooth even after days.
     motion.set([Math.sin(flowClock*.019),Math.cos(flowClock*.013),Math.sin(flowClock*.011),Math.cos(flowClock*.017)]);
@@ -416,7 +435,7 @@ canvas{display:block;width:100%;height:100%}
   }
   function render(){
     gl.useProgram(programs[0]);gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,w,h);
-    gl.uniform2f(loc.res,w,h);gl.uniform4fv(loc.motion,motion);gl.uniform4fv(loc.clouds,clouds);gl.uniform4fv(loc.music,music);gl.uniform4fv(loc.energy,energy);gl.uniform4fv(loc.sizes,sizes);gl.uniform1fv(loc.bands,bands);gl.uniform4fv(loc.lights,lightEnergy);
+    gl.uniform2f(loc.res,w,h);gl.uniform4fv(loc.motion,motion);gl.uniform4fv(loc.clouds,clouds);gl.uniform4fv(loc.music,music);gl.uniform4fv(loc.energy,energy);gl.uniform4fv(loc.sizes,renderSizes);gl.uniform1fv(loc.bands,bands);gl.uniform4fv(loc.lights,lightEnergy);
     gl.uniform4fv(loc.edgeEnergy,edgeEnergy);gl.uniform4fv(loc.edgeLights,edgeLights);gl.uniform4fv(loc.edgeMusic,edgeMusic);gl.uniform1fv(loc.edgeBands,edgeBands);
     gl.drawArrays(gl.TRIANGLES,0,3);
     gpuFence=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0);
