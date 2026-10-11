@@ -42,6 +42,7 @@ canvas{display:block;width:100%;height:100%}
   uniform vec4 u_material[4];
   uniform vec4 u_dance;
   uniform vec4 u_thumps;
+  uniform vec2 u_bass;
   uniform vec4 u_music;
   uniform vec4 u_energy;
   uniform vec4 u_sizes;
@@ -53,17 +54,17 @@ canvas{display:block;width:100%;height:100%}
   uniform float u_edgeBands[48];
   out vec4 fragColor;
   float hash(vec2 p){vec3 p3=fract(vec3(p.xyx)*.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}
-  float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+1.),f.x),f.y);}
-  float fbm(vec2 p){
+  float noise(vec2 p,float seed){vec2 i=floor(p)+vec2(seed,seed*.713),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+1.),f.x),f.y);}
+  float fbm(vec2 p,float seed){
     float n=0.,a=.53;
     // Fade unresolved octaves toward their mean instead of letting tiny paint
     // details shimmer as a moving cloud crosses pixels (including at 720p).
     float footprint=max(length(dFdx(p)),length(dFdy(p)));
-    for(int i=0;i<6;i++){
+    for(int i=0;i<8;i++){
       float resolved=1.-smoothstep(.35,.85,footprint);
-      // Two finer octaves add painted detail, not a brighter/larger cloud.
+      // Four finer octaves add painted detail, not a brighter/larger cloud.
       // Their zero-mean contribution vanishes below the pixel resolution.
-      float sampleValue=resolved>0.?mix(.5,noise(p),resolved):.5;
+      float sampleValue=resolved>0.?mix(.5,noise(p,seed+float(i)*17.1),resolved):.5;
       n+=a*(sampleValue-(i>=4?.5:0.));
       p=mat2(.8,.6,-.6,.8)*p*2.03+13.7;footprint*=2.03;a*=.5;
     }
@@ -91,7 +92,13 @@ canvas{display:block;width:100%;height:100%}
       // stay independent of this deformation, so they cannot rock back/forth.
       // A short, inertial radial breath stays responsive throughout a loud
       // phrase. It never scales the fine paint coordinates or travel paths.
-      vec2 spread=vec2(.69,.53)*vec2(1.+.12*u_dance[i],1.-.06*u_dance[i])*(1.+.27*u_thumps[i]);
+      // Only bass gets short hit-driven deformation. The other colors retain
+      // their phrase-sized volumes, without a second fast stretch/swell path.
+      // The bass hit ceiling and held-note support are continuous envelopes;
+      // neither changes the material coordinates or snaps between size caps.
+      float groove=i==0?u_dance.x:0.;
+      float swell=i==0?(1.+(.34+.10*u_bass.x)*u_thumps.x)*(1.+.08*u_bass.y):1.;
+      vec2 spread=vec2(.69,.53)*vec2(1.+.12*groove,1.-.06*groove)*swell;
       vec2 broad=local[i]/spread;
       scores[i]=-dot(broad,broad)*3.8;
       largestScore=max(largestScore,scores[i]);
@@ -111,13 +118,19 @@ canvas{display:block;width:100%;height:100%}
     for(int i=0;i<4;i++){
       // Paint travels with its cloud, but does not stretch/reseed when musical
       // energy changes its footprint. Shape and texture motion are independent.
-      vec2 p=local[i]*u_sizes[i]/.94+vec2(float(i)*7.3,float(i)*4.1);
-      float mist=fbm(p*2.9+u_material[i].xy*1.7);
-      float grain=fbm(vec2(p.x*8.1,p.y*13.2)+u_material[i].zw*.8);
+      float seed=19.7+float(i)*43.13,angle=.31+float(i)*1.173;
+      vec2 p=mat2(cos(angle),sin(angle),-sin(angle),cos(angle))*(local[i]*u_sizes[i]/.94);
+      p*=vec2(.94+float(i)*.035,1.06-float(i)*.025);
+      // Each cloud has an independent lattice, orientation and gentle domain
+      // warp. Seeds never change; audio cannot reseed or rock fine texture.
+      vec2 warpPoint=p*1.2+u_material[i].xy*.30;
+      p+=.16*(vec2(noise(warpPoint,seed+113.),noise(warpPoint+7.1,seed+271.))-.5);
+      float mist=fbm(p*2.9+u_material[i].xy*1.7,seed);
+      float grain=fbm(vec2(p.x*9.7,p.y*15.1)+u_material[i].zw*.8,seed+331.);
       float pigmentDepth=.06+1.6*pow(smoothstep(.20,.77,mist),2.);
       density[i]=pigmentDepth*(.40+.90*pow(smoothstep(.17,.80,grain),1.4));
       vec2 plane=vec2(p.x*.64+p.y*.77,-p.x*.77+p.y*.64);
-      float layers=fbm(vec2(plane.x*3.6,plane.y*32.)+u_material[i].xw*.55);
+      float layers=fbm(vec2(plane.x*3.9,plane.y*38.)+u_material[i].xw*.55,seed+719.);
       detail[i]=pow(smoothstep(.26,.72,layers),2.);
       vec2 slope=vec2(dFdx(mist)*u_resolution.x,dFdy(mist)*u_resolution.y)*.40;
       vec3 normal=normalize(vec3(-slope,.85));
@@ -200,6 +213,10 @@ canvas{display:block;width:100%;height:100%}
   // and material flow. Seven actual intervals per region only tune release;
   // they never schedule a predicted hit. Fixed storage, no per-hit allocations.
   const thumps=new Float32Array(4),thumpVelocity=new Float64Array(4),thumpTargets=new Float32Array(4);
+  // Two fixed bass envelopes: recent real-hit density raises the hit ceiling;
+  // a sustained regional floor adds slow body growth without invented kicks.
+  const bassVisual=new Float32Array(2),bassVisualVelocity=new Float64Array(2);
+  let bassHitPressure=0,bassHoldTarget=0,bassHoldEnvelope=0;
   const hitTimes=new Float64Array(4).fill(-Infinity),hitIntervals=new Float64Array(28),hitScratch=new Float64Array(7);
   const hitCounts=new Uint8Array(4),hitPositions=new Uint8Array(4);
   // Geometry needs a prominent loud/quiet attack, not every spectral onset.
@@ -280,7 +297,7 @@ canvas{display:block;width:100%;height:100%}
     gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
     gl.useProgram(programs[0]);const a=gl.getAttribLocation(programs[0],'a_position');gl.enableVertexAttribArray(a);gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
     const at=n=>gl.getUniformLocation(programs[0],n);
-    loc={res:at('u_resolution'),motion:at('u_motion'),clouds:at('u_clouds[0]'),material:at('u_material[0]'),dance:at('u_dance'),thumps:at('u_thumps'),music:at('u_music'),energy:at('u_energy'),sizes:at('u_sizes'),bands:at('u_bands[0]'),lights:at('u_lights'),edgeEnergy:at('u_edgeEnergy'),edgeLights:at('u_edgeLights'),edgeMusic:at('u_edgeMusic'),edgeBands:at('u_edgeBands[0]')};
+    loc={res:at('u_resolution'),motion:at('u_motion'),clouds:at('u_clouds[0]'),material:at('u_material[0]'),dance:at('u_dance'),thumps:at('u_thumps'),bass:at('u_bass'),music:at('u_music'),energy:at('u_energy'),sizes:at('u_sizes'),bands:at('u_bands[0]'),lights:at('u_lights'),edgeEnergy:at('u_edgeEnergy'),edgeLights:at('u_edgeLights'),edgeMusic:at('u_edgeMusic'),edgeBands:at('u_edgeBands[0]')};
     resizePending=true;if(visible)resize();
   }
   function birth(cloud,strength,born){
@@ -289,6 +306,7 @@ canvas{display:block;width:100%;height:100%}
     if(slot){slot.cloud=cloud;slot.strength=Math.min(1,strength);slot.born=born;slot.hitDuration=.30;slot.hitStrength=0;slot.hitPending=true;}
   }
   function clearHitTiming(){
+    bassHitPressure=bassHoldTarget=bassHoldEnvelope=0;
     hitTimes.fill(-Infinity);hitIntervals.fill(0);hitCounts.fill(0);hitPositions.fill(0);
     hitSampleCount=hitSamplePosition=0;hitSampleTimes.fill(0);hitSampleLevels.fill(0);
     hitEventCounts.fill(0);hitEventPositions.fill(0);hitEventTimes.fill(0);hitEventWeights.fill(0);
@@ -404,6 +422,7 @@ canvas{display:block;width:100%;height:100%}
       light.hitStrength=.90*light.strength*supported*audible*freshness*emphasis;
       light.hitDuration=light.hitStrength>.075?hitDuration(cloud,onset):.24;
       light.hitPending=false;
+      if(cloud===0&&light.hitStrength>.075)bassHitPressure=Math.min(4,bassHitPressure+light.hitStrength);
       if(evidence>.025){
         rememberHit(cloud,onset,evidence);
         const influence=cloud===0?1:cloud===2?.70:.55;
@@ -412,6 +431,21 @@ canvas{display:block;width:100%;height:100%}
       }
     }
     fitHitPulse(4,now);
+    // A low regional floor over 300 ms distinguishes isolated attacks from
+    // bass that remains present through held/changing notes. No pitch labels
+    // or extra PCM analysis are needed; the existing RMS/power data suffice.
+    let low1=Infinity,low2=Infinity,low3=Infinity,count=0;
+    for(let j=0;j<hitSampleCount;j++){
+      const age=now-hitSampleTimes[j];if(age<0||age>.30)continue;
+      const value=hitSampleLevels[j*4];count++;
+      if(value<low1){low3=low2;low2=low1;low1=value;}
+      else if(value<low2){low3=low2;low2=value;}
+      else if(value<low3)low3=value;
+    }
+    let power=0;for(let i=0;i<4;i++)power+=desiredBalance[i];
+    const floor=count>=8?(low1+low2+low3)/3:0;
+    const audible=clamp((floor-.055)/.28),dominance=clamp((desiredBalance[0]/Math.max(.0001,power)-.20)/.45);
+    bassHoldTarget=audible*audible*(3-2*audible)*dominance*dominance*(3-2*dominance);
   }
   function hitDuration(cloud,born){
     const gap=born-hitTimes[cloud];
@@ -694,13 +728,20 @@ canvas{display:block;width:100%;height:100%}
       // next regular hit. Max (not sum) keeps dense overlaps off a raised floor.
       // A quintic envelope has zero slope/acceleration at its joins; the spring
       // below also preserves current position and velocity when hits overlap.
-      if(age<light.hitDuration){
+      if(light.cloud===0&&age<light.hitDuration){
         const rise=Math.min(.035,light.hitDuration*.25);
         const progress=(age-rise)/(light.hitDuration-rise);
         const envelope=age<rise?easeHit(age/rise):1-easeHit(progress*(2-progress));
         thumpTargets[light.cloud]=Math.max(thumpTargets[light.cloud],light.hitStrength*envelope);
       }
     }
+    // Continuous caps rather than an ordinary/intense mode switch. An isolated
+    // hit barely changes the ceiling; strong close hits build bounded support.
+    bassHitPressure*=Math.exp(-dt/1.25);
+    const hitDensity=clamp((bassHitPressure-.75)/2.0);
+    settle(bassVisual,bassVisualVelocity,0,hitDensity*hitDensity*(3-2*hitDensity),3.2,dt,.40,1.0);
+    bassHoldEnvelope+=(bassHoldTarget-bassHoldEnvelope)*(1-Math.exp(-dt/(bassHoldTarget>bassHoldEnvelope?3.0:1.6)));
+    settle(bassVisual,bassVisualVelocity,1,bassHoldEnvelope,3,dt,.25,.50);
     let balanceSum=0;
     for(let i=0;i<4;i++){
       phraseEnergy[i]+=(desiredEnergy[i]-phraseEnergy[i])*(1-Math.exp(-dt/(desiredEnergy[i]>phraseEnergy[i]?.45:.85)));
@@ -869,7 +910,7 @@ canvas{display:block;width:100%;height:100%}
   }
   function render(){
     gl.useProgram(programs[0]);gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,w,h);
-    gl.uniform2f(loc.res,w,h);gl.uniform4fv(loc.motion,motion);gl.uniform4fv(loc.clouds,clouds);gl.uniform4fv(loc.material,material);gl.uniform4fv(loc.dance,dance);gl.uniform4fv(loc.thumps,thumps);gl.uniform4fv(loc.music,music);gl.uniform4fv(loc.energy,energy);gl.uniform4fv(loc.sizes,sizes);gl.uniform1fv(loc.bands,bands);gl.uniform4fv(loc.lights,lightEnergy);
+    gl.uniform2f(loc.res,w,h);gl.uniform4fv(loc.motion,motion);gl.uniform4fv(loc.clouds,clouds);gl.uniform4fv(loc.material,material);gl.uniform4fv(loc.dance,dance);gl.uniform4fv(loc.thumps,thumps);gl.uniform2f(loc.bass,clamp(bassVisual[0]),clamp(bassVisual[1]));gl.uniform4fv(loc.music,music);gl.uniform4fv(loc.energy,energy);gl.uniform4fv(loc.sizes,sizes);gl.uniform1fv(loc.bands,bands);gl.uniform4fv(loc.lights,lightEnergy);
     gl.uniform4fv(loc.edgeEnergy,edgeEnergy);gl.uniform4fv(loc.edgeLights,edgeLights);gl.uniform4fv(loc.edgeMusic,edgeMusic);gl.uniform1fv(loc.edgeBands,edgeBands);
     gl.drawArrays(gl.TRIANGLES,0,3);
     gpuFence=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0);
@@ -900,7 +941,7 @@ canvas{display:block;width:100%;height:100%}
       if(socket){socket.onclose=null;socket.onmessage=null;socket.close();socket=null;}
       lastIds=null;lastCloudIds=null;lastReceived=-Infinity;amplitudeReady=false;
       clearContext();
-      clearHitTiming();thumpTargets.fill(0);thumps.fill(0);thumpVelocity.fill(0);
+      clearHitTiming();thumpTargets.fill(0);thumps.fill(0);thumpVelocity.fill(0);bassVisual.fill(0);bassVisualVelocity.fill(0);
       for(const light of lights)light.strength=0;
     }else if(!lost){resizePending=true;if(!simulated)connect();raf=requestAnimationFrame(frame);}
   }
@@ -923,6 +964,7 @@ canvas{display:block;width:100%;height:100%}
 </script>
 </body>
 </html>
+
 
 
 
