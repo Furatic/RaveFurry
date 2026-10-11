@@ -174,7 +174,7 @@ canvas{display:block;width:100%;height:100%}
   let lastFrame=0,flowClock=0,simPhase=0,activity=0,driftActivity=0,driftLevel=0,desiredRhythm=0,driftRhythm=0,phraseLevel=0;
   const bands=new Float32Array(48),music=new Float32Array(4),desiredBands=new Float32Array(48),desiredMusic=new Float32Array(4);
   const clouds=new Float32Array(16),motion=new Float32Array(4),lightEnergy=new Float32Array(4);
-  const lights=Array.from({length:LIGHT_COUNT},()=>({born:-100,cloud:0,strength:0,hitDuration:.30}));
+  const lights=Array.from({length:LIGHT_COUNT},()=>({born:-100,cloud:0,strength:0,hitDuration:.30,hitStrength:0,hitPending:false}));
   const energy=new Float32Array(4),desiredEnergy=new Float32Array(4),balance=new Float32Array(4),desiredBalance=new Float32Array(4),sizes=new Float32Array([.94,.94,.94,.94]);
   // Fixed animation state: retarget from the current position AND velocity.
   // Beats may flash quickly; the gas volume itself has gentle, bounded inertia.
@@ -202,6 +202,17 @@ canvas{display:block;width:100%;height:100%}
   const thumps=new Float32Array(4),thumpVelocity=new Float64Array(4),thumpTargets=new Float32Array(4);
   const hitTimes=new Float64Array(4).fill(-Infinity),hitIntervals=new Float64Array(28),hitScratch=new Float64Array(7);
   const hitCounts=new Uint8Array(4),hitPositions=new Uint8Array(4);
+  // Geometry needs a prominent loud/quiet attack, not every spectral onset.
+  // Half a second of existing regional RMS measures each attack's excursion;
+  // eight seconds of weighted event times measure repetition, never store PCM.
+  const HIT_SAMPLES=32,HIT_EVENTS=48,HIT_PERIODS=261;
+  const hitSampleTimes=new Float64Array(HIT_SAMPLES),hitSampleLevels=new Float32Array(HIT_SAMPLES*4);
+  const hitEventTimes=new Float64Array(HIT_EVENTS*5),hitEventWeights=new Float32Array(HIT_EVENTS*5);
+  const hitEventCounts=new Uint8Array(5),hitEventPositions=new Uint8Array(5);
+  const hitPeriods=new Float64Array(5),hitAnchors=new Float64Array(5),hitConfidence=new Float64Array(5),hitFitAt=new Float64Array(5);
+  const hitPeriodScores=new Float64Array(HIT_PERIODS),hitPeriodPhases=new Float64Array(HIT_PERIODS),hitPeriodCoherences=new Float64Array(HIT_PERIODS);
+  const hitFitAges=new Float64Array(HIT_EVENTS),hitFitWeights=new Float64Array(HIT_EVENTS);
+  let hitSamplePosition=0,hitSampleCount=0;
   const materialClock=new Float64Array(4),material=new Float32Array(16);
   let amplitudeReady=false,desiredTempo=0,desiredConfidence=0;
   // 45 seconds at 2 Hz: power, four regional powers, confidence-weighted
@@ -275,9 +286,133 @@ canvas{display:block;width:100%;height:100%}
   function birth(cloud,strength,born){
     if(strength<.004)return;
     const slot=lights.find(light=>born-light.born>=1.9||light.strength===0);
-    if(slot){slot.cloud=cloud;slot.strength=Math.min(1,strength);slot.born=born;slot.hitDuration=hitDuration(cloud,born);}
+    if(slot){slot.cloud=cloud;slot.strength=Math.min(1,strength);slot.born=born;slot.hitDuration=.30;slot.hitStrength=0;slot.hitPending=true;}
   }
-  function clearHitTiming(){hitTimes.fill(-Infinity);hitIntervals.fill(0);hitCounts.fill(0);hitPositions.fill(0);}
+  function clearHitTiming(){
+    hitTimes.fill(-Infinity);hitIntervals.fill(0);hitCounts.fill(0);hitPositions.fill(0);
+    hitSampleCount=hitSamplePosition=0;hitSampleTimes.fill(0);hitSampleLevels.fill(0);
+    hitEventCounts.fill(0);hitEventPositions.fill(0);hitEventTimes.fill(0);hitEventWeights.fill(0);
+    hitPeriods.fill(0);hitAnchors.fill(0);hitConfidence.fill(0);hitFitAt.fill(0);
+    for(const light of lights){light.hitPending=false;light.hitStrength=0;}
+  }
+  function fitHitPulse(cloud,now){
+    if(now-hitFitAt[cloud]<.35)return;hitFitAt[cloud]=now;
+    const base=cloud*HIT_EVENTS,count=hitEventCounts[cloud];
+    let total=0,maximum=0,oldest=now;
+    for(let j=0;j<count;j++){
+      const age=now-hitEventTimes[base+j];hitFitAges[j]=age;hitFitWeights[j]=0;if(age<0||age>8)continue;
+      const weight=hitEventWeights[base+j]*Math.exp(-age/4);
+      hitFitWeights[j]=weight;
+      total+=weight;maximum=Math.max(maximum,weight);oldest=Math.min(oldest,hitEventTimes[base+j]);
+    }
+    const span=now-oldest,effective=total/Math.max(1e-8,maximum);
+    if(span<1.25||effective<3){hitConfidence[cloud]*=.65;return;}
+    let best=0,bestIndex=0;const exposure=4*(1-Math.exp(-span/4));
+    for(let k=0;k<HIT_PERIODS;k++){
+      const period=.20+k*.005;let real=0,imaginary=0;
+      for(let j=0;j<count;j++){
+        const weight=hitFitWeights[j];if(!weight)continue;
+        const angle=-hitFitAges[j]*Math.PI*2/period;
+        real+=weight*Math.cos(angle);imaginary+=weight*Math.sin(angle);
+      }
+      const coherence=Math.hypot(real,imaginary)/total;
+      // A half-period grid with empty intervening beats is not a faster rhythm.
+      // Occupancy rewards observed recurrence, while weighted circular phase
+      // favors prominent attacks over many weak syllables/ornamentations.
+      const occupancy=Math.min(1,effective*period/(exposure+period));
+      const repetition=clamp((span/period-1)/3);
+      const score=coherence*coherence*occupancy*repetition;
+      hitPeriodScores[k]=score;hitPeriodPhases[k]=Math.atan2(imaginary,real)*period/(Math.PI*2);hitPeriodCoherences[k]=coherence;
+      if(score>best){best=score;bestIndex=k;}
+    }
+    // Retain a supported period rather than flipping tempo octave each phrase.
+    const previous=Math.round((hitPeriods[cloud]-.20)/.005);
+    if(previous>=0&&previous<HIT_PERIODS&&hitPeriodScores[previous]>=best*.88)bestIndex=previous;
+    hitPeriods[cloud]=.20+bestIndex*.005;hitAnchors[cloud]=now+hitPeriodPhases[bestIndex];
+    hitConfidence[cloud]=clamp((hitPeriodCoherences[bestIndex]-.40)/.45)*clamp((effective-2)/4);
+  }
+  function rememberHit(stream,onset,evidence){
+    const base=stream*HIT_EVENTS,previous=(hitEventPositions[stream]-1+HIT_EVENTS)%HIT_EVENTS;
+    const weight=evidence*evidence;
+    // Four colors can mark one drum attack. The shared rhythm receives one
+    // strongest observation for that episode, not four votes for the same hit.
+    if(stream===4&&hitEventCounts[stream]&&Math.abs(onset-hitEventTimes[base+previous])<.065){
+      if(weight>hitEventWeights[base+previous]){hitEventTimes[base+previous]=onset;hitEventWeights[base+previous]=weight;}
+      return;
+    }
+    const index=base+hitEventPositions[stream];
+    hitEventTimes[index]=onset;hitEventWeights[index]=weight;
+    hitEventPositions[stream]=(hitEventPositions[stream]+1)%HIT_EVENTS;
+    hitEventCounts[stream]=Math.min(HIT_EVENTS,hitEventCounts[stream]+1);
+  }
+  function hitSupport(stream,onset){
+    const period=hitPeriods[stream];if(period<=0)return 0;
+    const distance=Math.abs((onset-hitAnchors[stream]+period*100+.5*period)%period-.5*period);
+    const width=Math.max(.028,.10*period),half=period*.5;
+    const subDistance=Math.abs((onset-hitAnchors[stream]+period*100+.5*half)%half-.5*half);
+    return Math.max(Math.exp(-.5*(distance/width)**2),.55*Math.exp(-.5*(subDistance/width)**2));
+  }
+  function hitConfidenceAt(stream,onset){
+    if(!hitEventCounts[stream])return 0;
+    const index=stream*HIT_EVENTS+(hitEventPositions[stream]-1+HIT_EVENTS)%HIT_EVENTS;
+    const period=hitPeriods[stream],age=Math.max(0,onset-hitEventTimes[index]-period*2);
+    return hitConfidence[stream]*Math.exp(-age/Math.max(.4,period*2));
+  }
+  function measureHitFrame(now){
+    // Sample capture packets, not rendering callbacks: refresh rate cannot
+    // manufacture extra observations. Every buffer overwrites fixed slots.
+    const previous=(hitSamplePosition-1+HIT_SAMPLES)%HIT_SAMPLES;
+    const slot=hitSampleCount&&now<=hitSampleTimes[previous]?previous:hitSamplePosition;
+    hitSampleTimes[slot]=now;
+    for(let i=0;i<4;i++)hitSampleLevels[slot*4+i]=desiredAmplitude[i];
+    if(slot===hitSamplePosition){hitSamplePosition=(slot+1)%HIT_SAMPLES;hitSampleCount=Math.min(HIT_SAMPLES,hitSampleCount+1);}
+    for(const light of lights){
+      if(!light.hitPending||!light.strength)continue;
+      const cloud=light.cloud,onset=light.born-delay;
+      if(onset>now)continue;
+      let peak=0,low1=Infinity,low2=Infinity,low3=Infinity,preCount=0,nearTotal=0,nearCount=0;
+      for(let j=0;j<hitSampleCount;j++){
+        const age=hitSampleTimes[j]-onset,value=hitSampleLevels[j*4+cloud];
+        if(age>=-.025&&age<=.085)peak=Math.max(peak,value);
+        if(age>=-.075&&age<-.025){nearTotal+=value;nearCount++;}
+        if(age>=-.18&&age<-.03){
+          preCount++;
+          if(value<low1){low3=low2;low2=low1;low1=value;}
+          else if(value<low2){low3=low2;low2=value;}
+          else if(value<low3)low3=value;
+        }
+      }
+      // Average the lowest three observations to resist an isolated trough.
+      const floor=preCount>=3?(low1+low2+low3)/3:preCount?low1:peak;
+      const excursion=clamp((peak-floor)/(peak+.008));
+      const prominence=clamp((excursion-.06)/.50);
+      // An old hit's decaying tail can still sit above the earlier trough.
+      // Require a NEW rise near this onset, so that tail cannot thump twice.
+      const near=nearCount?nearTotal/nearCount:floor;
+      const freshness=clamp(((peak-near)/(peak+.008)-.012)/.12);
+      const audible=clamp(peak/.055);
+      const evidence=light.strength*prominence*audible*freshness;
+      const localConfidence=hitConfidenceAt(cloud,onset),sharedConfidence=hitConfidenceAt(4,onset);
+      const confidence=Math.max(localConfidence,sharedConfidence);
+      const support=Math.max(localConfidence*hitSupport(cloud,onset),sharedConfidence*hitSupport(4,onset));
+      // No square-root amplification of a marginal onset. Size follows the
+      // measured excursion; temporal context only grades its musical emphasis.
+      const emphasis=1-.45*Math.max(0,confidence-support);
+      // A smaller measured excursion on an established rhythm can still mark
+      // a compressed kick. Context cannot create motion without an excursion.
+      const supported=prominence+.40*support*(1-prominence)*clamp(excursion/.12);
+      light.hitStrength=.90*light.strength*supported*audible*freshness*emphasis;
+      light.hitDuration=light.hitStrength>.075?hitDuration(cloud,onset):.24;
+      light.hitPending=false;
+      if(evidence>.025){
+        rememberHit(cloud,onset,evidence);
+        const influence=cloud===0?1:cloud===2?.70:.55;
+        rememberHit(4,onset,evidence*influence);
+        fitHitPulse(cloud,onset);
+      }
+    }
+    fitHitPulse(4,now);
+  }
   function hitDuration(cloud,born){
     const gap=born-hitTimes[cloud];
     if(gap>.10&&gap<1.5){
@@ -370,6 +505,7 @@ canvas{display:block;width:100%;height:100%}
       amplitudeEnvelope.set(desiredAmplitude);amplitudeReference.set(desiredAmplitude);amplitudeReady=true;
       sectionFast=sectionSlow=overall*overall;sectionCue=0;sectionOccupancy=0;
     }
+    measureHitFrame(now);
     lastIds={kick:data.kickId,accent:data.accentId};
     report(`${data.status} · ${data.error||data.device||'system output'} · local audio analysis`);
   }
@@ -406,6 +542,7 @@ canvas{display:block;width:100%;height:100%}
       amplitudeEnvelope.set(desiredAmplitude);amplitudeReference.set(desiredAmplitude);amplitudeReady=true;
       sectionFast=sectionSlow=overall*overall;sectionCue=0;sectionOccupancy=0;
     }
+    measureHitFrame(now);
     activity=level*.75;desiredRhythm=level?clamp((tempo-70)/110)*level:0;lastReceived=now;report('Simulated '+demo+' passage');
   }
   function refreshContext(){
@@ -558,11 +695,10 @@ canvas{display:block;width:100%;height:100%}
       // A quintic envelope has zero slope/acceleration at its joins; the spring
       // below also preserves current position and velocity when hits overlap.
       if(age<light.hitDuration){
-        const rise=Math.min(.055,light.hitDuration*.28);
+        const rise=Math.min(.035,light.hitDuration*.25);
         const progress=(age-rise)/(light.hitDuration-rise);
         const envelope=age<rise?easeHit(age/rise):1-easeHit(progress*(2-progress));
-        const strength=.75*Math.sqrt(light.strength);
-        thumpTargets[light.cloud]=Math.max(thumpTargets[light.cloud],strength*envelope);
+        thumpTargets[light.cloud]=Math.max(thumpTargets[light.cloud],light.hitStrength*envelope);
       }
     }
     let balanceSum=0;
@@ -787,5 +923,6 @@ canvas{display:block;width:100%;height:100%}
 </script>
 </body>
 </html>
+
 
 
