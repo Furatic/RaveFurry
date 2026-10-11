@@ -43,7 +43,7 @@ canvas{display:block;width:100%;height:100%}
   uniform vec4 u_dance;
   uniform vec4 u_thumps;
   uniform vec2 u_bass;
-  uniform vec4 u_music;
+  uniform vec4 u_music; // Lighting headroom, bass, mid and treble envelopes.
   uniform vec4 u_energy;
   uniform vec4 u_sizes;
   uniform float u_bands[48];
@@ -153,10 +153,11 @@ canvas{display:block;width:100%;height:100%}
       float scattered=ray[i]*(.035+.18*density[i])*(.75+energy*.35);
       float paint=detail[i]*(.17+energy*.22)*(.18+.65*ray[i]);
       float surface=sheen[i]*(.006+band*.08+mix(u_music.w,u_edgeMusic.w,overlap)*.018);
-      col+=c*(body+scattered+paint+surface)*ownership[i];
+      // Reserve luminance headroom for accents in dense passages.
+      float bed=1.-.18*u_music.x;
+      col+=c*(body+scattered+paint+surface)*ownership[i]*bed;
     }
-    // Light envelopes are summed per cloud before upload. This is identical
-    // to summing each overlapping pulse here, with just four light uniforms.
+    // Each region supplies one smooth accent envelope.
     for(int cloud=0;cloud<4;cloud++){
       float envelope=mix(u_lights[cloud],u_edgeLights[cloud],overlap);
       if(envelope<=0.)continue;
@@ -193,7 +194,7 @@ canvas{display:block;width:100%;height:100%}
   let lastFrame=0,flowClock=0,simPhase=0,activity=0,driftActivity=0,driftLevel=0,desiredRhythm=0,driftRhythm=0,phraseLevel=0;
   const bands=new Float32Array(48),music=new Float32Array(4),desiredBands=new Float32Array(48),desiredMusic=new Float32Array(4);
   const clouds=new Float32Array(16),motion=new Float32Array(4),lightEnergy=new Float32Array(4);
-  const lights=Array.from({length:LIGHT_COUNT},()=>({born:-100,cloud:0,strength:0,hitDuration:.30,hitStrength:0,hitPending:false}));
+  const lights=Array.from({length:LIGHT_COUNT},()=>({born:-100,cloud:0,strength:0,accentStrength:0,hitDuration:.30,hitStrength:0,hitPending:false}));
   const energy=new Float32Array(4),desiredEnergy=new Float32Array(4),balance=new Float32Array(4),desiredBalance=new Float32Array(4),sizes=new Float32Array([.94,.94,.94,.94]);
   // Fixed animation state: retarget from the current position AND velocity.
   // Beats may flash quickly; the gas volume itself has gentle, bounded inertia.
@@ -202,6 +203,14 @@ canvas{display:block;width:100%;height:100%}
   // sustained spectral emphasis drives physical size and neighbor displacement.
   const phraseEnergy=new Float64Array(4),phraseBalance=new Float64Array(4),cloudMass=new Float64Array(4);
   const lightTargets=new Float32Array(4),lightVelocity=new Float64Array(4);
+  const renderEnergy=new Float32Array(4),renderEnergyVelocity=new Float64Array(4);
+  const renderMusic=new Float32Array(4),renderMusicVelocity=new Float64Array(4);
+  const renderBands=new Float32Array(48),renderBandVelocity=new Float64Array(48);
+  // Passage momentum and lighting headroom share continuous, bounded state.
+  const sceneState=new Float64Array(2),sceneVelocity=new Float64Array(2);
+  let travelLevel=0,previousTravelBoost=1;
+  // Local pressure is independent of the slow travel path.
+  const pressureTargets=new Float64Array(8),pressureOffsets=new Float64Array(8),pressureVelocity=new Float64Array(8);
   // Boundary lighting has its own fixed, continuous-velocity animation state.
   // No history textures or framebuffer feedback are needed for the crossfade.
   const edgeEnergy=new Float32Array(4),edgeEnergyVelocity=new Float64Array(4);
@@ -233,6 +242,7 @@ canvas{display:block;width:100%;height:100%}
   const hitEventTimes=new Float64Array(HIT_EVENTS*5),hitEventWeights=new Float32Array(HIT_EVENTS*5);
   const hitEventCounts=new Uint8Array(5),hitEventPositions=new Uint8Array(5);
   const hitPeriods=new Float64Array(5),hitAnchors=new Float64Array(5),hitConfidence=new Float64Array(5),hitFitAt=new Float64Array(5);
+  const proposedPeriods=new Float64Array(5),proposedCounts=new Uint8Array(5);
   const hitPeriodScores=new Float64Array(HIT_PERIODS),hitPeriodPhases=new Float64Array(HIT_PERIODS),hitPeriodCoherences=new Float64Array(HIT_PERIODS);
   const hitFitAges=new Float64Array(HIT_EVENTS),hitFitWeights=new Float64Array(HIT_EVENTS);
   let hitSamplePosition=0,hitSampleCount=0;
@@ -313,7 +323,7 @@ canvas{display:block;width:100%;height:100%}
   function birth(cloud,strength,born){
     if(strength<.004)return;
     const slot=lights.find(light=>born-light.born>=1.9||light.strength===0);
-    if(slot){slot.cloud=cloud;slot.strength=Math.min(1,strength);slot.born=born;slot.hitDuration=.30;slot.hitStrength=0;slot.hitPending=true;}
+    if(slot){slot.cloud=cloud;slot.strength=Math.min(1,strength);slot.accentStrength=slot.strength*.18;slot.born=born;slot.hitDuration=.30;slot.hitStrength=0;slot.hitPending=true;}
   }
   function clearHitTiming(){
     bassHitPressure=bassHoldTarget=bassHoldEnvelope=0;
@@ -321,6 +331,7 @@ canvas{display:block;width:100%;height:100%}
     hitSampleCount=hitSamplePosition=0;hitSampleTimes.fill(0);hitSampleLevels.fill(0);
     hitEventCounts.fill(0);hitEventPositions.fill(0);hitEventTimes.fill(0);hitEventWeights.fill(0);
     hitPeriods.fill(0);hitAnchors.fill(0);hitConfidence.fill(0);hitFitAt.fill(0);
+    proposedPeriods.fill(0);proposedCounts.fill(0);
     for(const light of lights){light.hitPending=false;light.hitStrength=0;}
   }
   function fitHitPulse(cloud,now){
@@ -356,8 +367,23 @@ canvas{display:block;width:100%;height:100%}
     // Retain a supported period rather than flipping tempo octave each phrase.
     const previous=Math.round((hitPeriods[cloud]-.20)/.005);
     if(previous>=0&&previous<HIT_PERIODS&&hitPeriodScores[previous]>=best*.88)bestIndex=previous;
-    hitPeriods[cloud]=.20+bestIndex*.005;hitAnchors[cloud]=now+hitPeriodPhases[bestIndex];
-    hitConfidence[cloud]=clamp((hitPeriodCoherences[bestIndex]-.40)/.45)*clamp((effective-2)/4);
+    const proposed=.20+bestIndex*.005,confidence=clamp((hitPeriodCoherences[bestIndex]-.40)/.45)*clamp((effective-2)/4);
+    if(!hitPeriods[cloud]){
+      hitPeriods[cloud]=proposed;hitAnchors[cloud]=now+hitPeriodPhases[bestIndex];
+    }else{
+      // Require repeated evidence for a large tempo change; phase corrections
+      // move gradually and never change the timestamp of a measured attack.
+      const changed=Math.abs(Math.log(proposed/hitPeriods[cloud]))>.12;
+      if(changed){
+        proposedCounts[cloud]=Math.abs(proposed-proposedPeriods[cloud])<.04*proposed?Math.min(3,proposedCounts[cloud]+1):1;
+        proposedPeriods[cloud]=proposed;
+      }else proposedCounts[cloud]=0;
+      if(!changed||proposedCounts[cloud]>=3)hitPeriods[cloud]+=(proposed-hitPeriods[cloud])*.22;
+      const period=hitPeriods[cloud],difference=now+hitPeriodPhases[bestIndex]-hitAnchors[cloud];
+      const error=((difference+period*.5)%period+period)%period-period*.5;
+      hitAnchors[cloud]+=Math.max(-period*.06,Math.min(period*.06,error*.35));
+    }
+    hitConfidence[cloud]+=(confidence-hitConfidence[cloud])*.30;
   }
   function rememberHit(stream,onset,evidence){
     const base=stream*HIT_EVENTS,previous=(hitEventPositions[stream]-1+HIT_EVENTS)%HIT_EVENTS;
@@ -430,6 +456,7 @@ canvas{display:block;width:100%;height:100%}
       // a compressed kick. Context cannot create motion without an excursion.
       const supported=prominence+.40*support*(1-prominence)*clamp(excursion/.12);
       light.hitStrength=.90*light.strength*supported*audible*freshness*emphasis;
+      light.accentStrength=light.strength*(.18+.82*clamp(.65*supported*audible*freshness+.35*support*audible))*emphasis;
       light.hitDuration=light.hitStrength>.075?hitDuration(cloud,onset):.24;
       light.hitPending=false;
       if(cloud===0&&light.hitStrength>.075)bassHitPressure=Math.min(4,bassHitPressure+light.hitStrength);
@@ -465,7 +492,7 @@ canvas{display:block;width:100%;height:100%}
     }else if(gap>=1.5){hitCounts[cloud]=hitPositions[cloud]=0;}
     hitTimes[cloud]=Math.max(hitTimes[cloud],born);
     const count=hitCounts[cloud];
-    if(!count)return .30;
+    if(!count)return .27;
     // Small in-place insertion sort into reusable scratch. A syncopated pair
     // cannot instantly resize every release, and no global tempo alias is used.
     for(let i=0;i<count;i++){
@@ -474,7 +501,7 @@ canvas{display:block;width:100%;height:100%}
       hitScratch[j]=value;
     }
     const period=(hitScratch[Math.floor((count-1)/2)]+hitScratch[Math.floor(count/2)])*.5;
-    return Math.max(.12,Math.min(.30,period*.72));
+    return Math.max(.095,Math.min(.27,period*.55));
   }
   const easeHit=t=>t*t*t*(10+t*(-15+6*t));
   const clamp=value=>Math.max(0,Math.min(1,value));
@@ -709,6 +736,16 @@ canvas{display:block;width:100%;height:100%}
     }
     return true;
   }
+  function footprint(index,nx,ny,expanded){
+    const c=cloudStates[index],cos=Math.cos(c.angle),sin=Math.sin(c.angle);
+    const aspect=w&&h?w/h:canvas.clientWidth/Math.max(1,canvas.clientHeight);
+    const x=nx*aspect*cos+ny*sin,y=-nx*aspect*sin+ny*cos;
+    const groove=expanded&&index===0?dance[0]:0;
+    const held=index===0?1+.08*clamp(bassVisual[1]):1;
+    const swell=expanded&&index===0?1+(.34+.10*clamp(bassVisual[0]))*thumps[0]:1;
+    const rx=.69*sizes[index]*held*swell*(1+.12*groove),ry=.53*sizes[index]*held*swell*(1-.06*groove);
+    return 1/Math.sqrt(Math.max(.001,(x/rx)**2+(y/ry)**2));
+  }
   function update(dt,now){
     if(simulated)simulate(dt,now);
     if(now-lastReceived>.50){if(amplitudeReady)clearHitTiming();desiredMusic.fill(0);desiredBands.fill(0);desiredEnergy.fill(0);desiredBalance.fill(0);desiredAmplitude.fill(0);amplitudeReady=false;activity=0;desiredRhythm=desiredTempo=desiredConfidence=0;}
@@ -720,12 +757,20 @@ canvas{display:block;width:100%;height:100%}
     driftLevel+=(music[0]-driftLevel)*(1-Math.exp(-dt/.60));
     driftRhythm+=(desiredRhythm-driftRhythm)*(1-Math.exp(-dt/1.2));
     phraseLevel+=(desiredMusic[0]-phraseLevel)*(1-Math.exp(-dt/(desiredMusic[0]>phraseLevel?.45:.85)));
-    // Preserve quiet-passage travel. Bounded rhythm context adds a modest boost
-    // only during louder phrases, eased over 1.2 s. Velocity inertia stays intact.
+    // Use RMS-derived regional amplitudes for passage energy; display levels
+    // can already be at their ceiling during a loud, mastered track.
+    let amplitudePower=0;
+    for(let i=0;i<4;i++)amplitudePower+=desiredAmplitude[i]*desiredAmplitude[i];
+    const amplitude=Math.sqrt(amplitudePower);
+    travelLevel+=(amplitude-travelLevel)*(1-Math.exp(-dt/(amplitude>travelLevel?.10:.18)));
+    const loudness=1-Math.exp(-Math.max(0,travelLevel-.012)*3.5);
+    const rhythm=clamp(Math.max(desiredRhythm,.65*clamp(bassHitPressure/1.8)+.35*hitConfidenceAt(4,now)));
+    const driveTarget=loudness*(.40+.40*rhythm+.20*clamp(bassVisual[0]));
+    settle(sceneState,sceneVelocity,0,driveTarget,8,dt,1.6,8);
     const loud=clamp((driftLevel-.40)/.50),intensity=loud*loud*(3-2*loud);
-    // The same smooth confirmed-bass drive that opens blue's hit ceiling adds
-    // up to 25% travel, then releases toward the existing quiet-passage speed.
-    const speed=(1+.28*driftLevel+.20*driftActivity+.24*intensity+.20*intensity*driftRhythm)*(1+.25*clamp(bassVisual[0]));
+    const travelBoost=1+.50*clamp(sceneState[0]);
+    const speed=(1+.28*driftLevel+.20*driftActivity+.24*intensity+.20*intensity*driftRhythm)*(1+.25*clamp(bassVisual[0]))*travelBoost;
+    const momentumScale=travelBoost/previousTravelBoost;previousTravelBoost=travelBoost;
     flowClock+=dt*speed;
     pulse.fill(0);lightTargets.fill(0);thumpTargets.fill(0);
     for(const light of lights){
@@ -733,15 +778,18 @@ canvas{display:block;width:100%;height:100%}
       if(age>=1.9)light.strength=0;
       if(!light.strength||age<0)continue;
       const attack=1-Math.exp(-age/.018);
-      const fade=clamp((age-1.45)/.45);
-      lightTargets[light.cloud]+=attack*(Math.exp(-age/.23)+.16*Math.exp(-age/.75))*(1-fade*fade*(3-2*fade))*light.strength;
       pulse[light.cloud]+=attack*Math.exp(-age/.095)*light.strength;
+      const accentAttack=easeHit(clamp(age/.045));
+      const release=light.cloud===0?Math.max(.055,light.hitDuration*.55):Math.max(.09,light.hitDuration*.65);
+      const releasePhase=Math.max(0,age-.045)/release;
+      const accent=accentAttack*Math.exp(-releasePhase*releasePhase*releasePhase)*light.accentStrength;
+      lightTargets[light.cloud]=Math.max(lightTargets[light.cloud],accent);
       // One visible swell per confirmed attack, returning to zero before the
       // next regular hit. Max (not sum) keeps dense overlaps off a raised floor.
       // A quintic envelope has zero slope/acceleration at its joins; the spring
       // below also preserves current position and velocity when hits overlap.
       if(light.cloud===0&&age<light.hitDuration){
-        const rise=Math.min(.035,light.hitDuration*.25);
+        const rise=Math.min(.045,light.hitDuration*.30);
         const progress=(age-rise)/(light.hitDuration-rise);
         const envelope=age<rise?easeHit(age/rise):1-easeHit(progress*(2-progress));
         thumpTargets[light.cloud]=Math.max(thumpTargets[light.cloud],light.hitStrength*envelope);
@@ -774,15 +822,12 @@ canvas{display:block;width:100%;height:100%}
       // and acceleration; retargeting never resets existing position/velocity.
       sizeTargets[i]+=(targetSize-sizeTargets[i])*(1-Math.exp(-dt/.30));
       settle(sizes,sizeVelocity,i,sizeTargets[i],5,dt,.10,.30);
-      // Smooth late/irregular packet handoffs, with a short response so the
-      // lighting still marks the beat rather than sharing the slower geometry.
-      // A bounded, monotonic soft knee preserves attack timing but prevents
-      // many overlapping decays from turning a dense mix into competing blasts.
-      // Short measured attacks provide contrast; long overlapping tails no
-      // longer dominate a dense passage as an almost permanent bright glow.
-      const accent=.55*lightTargets[i]+.85*pulse[i];
-      const light=accent/Math.sqrt(1+(accent/1.35)**2);
-      settle(lightEnergy,lightVelocity,i,light,70,dt);
+      // Measured accents retain fast timing without summing a bright tail from
+      // every onset. Steady illumination follows the slower spectral envelope.
+      const accent=1.45*lightTargets[i],light=accent/Math.sqrt(1+(accent/1.25)**2);
+      settle(lightEnergy,lightVelocity,i,light,38,dt,5,80);
+      settle(renderEnergy,renderEnergyVelocity,i,phraseEnergy[i],12,dt,.9,5);
+      if(i)settle(renderMusic,renderMusicVelocity,i,music[i],14,dt,1.4,8);
       amplitudeEnvelope[i]+=(desiredAmplitude[i]-amplitudeEnvelope[i])*(1-Math.exp(-dt/.045));
       const reference=amplitudeReference[i],levelNow=amplitudeEnvelope[i];
       const relative=(levelNow-reference)/(levelNow+reference+.008);
@@ -814,10 +859,17 @@ canvas{display:block;width:100%;height:100%}
       // Shared colors evolve on a phrase-scale envelope, independently of the
       // quick core pulse. Retargeting preserves velocity through dense rhythms.
       settle(edgeEnergy,edgeEnergyVelocity,i,phraseEnergy[i],7,dt);
-      settle(edgeLights,edgeLightVelocity,i,lightEnergy[i],6,dt);
-      settle(edgeMusic,edgeMusicVelocity,i,music[i],7,dt);
+      settle(edgeLights,edgeLightVelocity,i,lightEnergy[i],10,dt,1.8,12);
+      settle(edgeMusic,edgeMusicVelocity,i,renderMusic[i],7,dt);
     }
-    for(let i=0;i<48;i++)settle(edgeBands,edgeBandVelocity,i,bands[i],7,dt);
+    let lightOccupancy=0;
+    for(let i=0;i<4;i++)lightOccupancy+=lightEnergy[i]*.25;
+    settle(sceneState,sceneVelocity,1,clamp(.65*sceneState[0]+.35*lightOccupancy),4,dt,.45,1.5);
+    renderMusic[0]=clamp(sceneState[1]);
+    for(let i=0;i<48;i++){
+      settle(renderBands,renderBandVelocity,i,bands[i],18,dt,1.6,12);
+      settle(edgeBands,edgeBandVelocity,i,renderBands[i],7,dt);
+    }
     if(exchangeA>=0&&flowClock-exchangeStarted>=EXCHANGE_DURATION){
       const old=pathSlots[exchangeA];pathSlots[exchangeA]=pathSlots[exchangeB];pathSlots[exchangeB]=old;
       exchangeA=exchangeB=-1;
@@ -893,7 +945,7 @@ canvas{display:block;width:100%;height:100%}
         // A sustained dominant cloud yields less and gently moves its weaker
         // neighbors. Same audio gives the same relative emphasis, even when
         // the ongoing procedural path starts in a different part of the screen.
-        const separation=.42+.045*Math.max(cloudMass[i],cloudMass[j]);
+        const separation=.42+.045*Math.max(cloudMass[i],cloudMass[j])+.12*Math.max(0,sizes[i]+sizes[j]-1.88);
         const mobility=Math.max(.55,Math.min(1.65,1+1.1*(cloudMass[j]-cloudMass[i])));
         const push=Math.max(0,separation-d)*18*mobility/Math.max(.04,d);
         fx+=dx*push;fy+=dy*push;
@@ -907,19 +959,44 @@ canvas{display:block;width:100%;height:100%}
     const exchangeTravel=1+easeHit(clamp(exchangePhase/.12))*easeHit(clamp((1-exchangePhase)/.12));
     for(let i=0;i<4;i++){
       const c=cloudStates[i],travel=i===exchangeA||i===exchangeB?exchangeTravel:1;
-      const ease=1-Math.exp(-dt*travel/3.5);
+      const ease=1-Math.exp(-dt*travel/(3.5-2*clamp(sceneState[0])));
       // Retain spectral inertia even when a crowded pair saturates the force
       // limit. Equal dominance/silence keeps the original travel response.
       const response=1+.32*(meanMass-cloudMass[i]);
+      c.vx*=momentumScale;c.vy*=momentumScale;
       c.vx+=(flowForces[i*2]*.0052*speed*response*travel-c.vx)*ease;c.vy+=(flowForces[i*2+1]*.0052*speed*response*travel-c.vy)*ease;
       c.x+=c.vx*dt;c.y+=c.vy*dt;
       c.angle+=(-.08+.16*Math.sin(flowClock*.012+i*1.9)+c.vy*10-c.angle)*(1-Math.exp(-dt/4));
-      // The cloud/material anchor follows only the smooth persistent flow.
-      // Rhythmic flex does not translate or reseed these fine-detail samples.
-      clouds[i*4]=c.x;clouds[i*4+1]=c.y;
+    }
+    // Expansion displaces nearby volumes along their shared boundary. The
+    // footprint uses the same orientation, aspect and swell as the shader.
+    pressureTargets.fill(0);
+    for(let i=0;i<4;i++)for(let j=i+1;j<4;j++){
+      const a=cloudStates[i],b=cloudStates[j],dx=a.x-b.x,dy=a.y-b.y,distance=Math.hypot(dx,dy);
+      const nx=dx/Math.max(.02,distance),ny=dy/Math.max(.02,distance);
+      const base=footprint(i,nx,ny,false)+footprint(j,nx,ny,false);
+      const expanded=footprint(i,nx,ny,true)+footprint(j,nx,ny,true)-base;
+      const growth=expanded>0?expanded*expanded/(expanded+.004):0;
+      const contact=Math.exp(-Math.pow(distance/(base*.62+.02),4));
+      const displacement=growth*contact*.80;
+      const share=(1+cloudMass[j])/(2+cloudMass[i]+cloudMass[j]);
+      pressureTargets[i*2]+=nx*displacement*share;pressureTargets[i*2+1]+=ny*displacement*share;
+      pressureTargets[j*2]-=nx*displacement*(1-share);pressureTargets[j*2+1]-=ny*displacement*(1-share);
+    }
+    const pressureSteps=Math.max(1,Math.ceil(dt*120)),pressureDt=dt/pressureSteps;
+    for(let i=0;i<4;i++){
+      const c=cloudStates[i],k=i*2;
+      const limit=.024/Math.hypot(.024,pressureTargets[k],pressureTargets[k+1]);
+      pressureTargets[k]*=limit;pressureTargets[k+1]*=limit;
+      for(let step=0;step<pressureSteps;step++){
+        settle(pressureOffsets,pressureVelocity,k,pressureTargets[k],26,pressureDt,.10,1.0);
+        settle(pressureOffsets,pressureVelocity,k+1,pressureTargets[k+1],26,pressureDt,.10,1.0);
+      }
+      const x=c.x+pressureOffsets[k],y=c.y+pressureOffsets[k+1];
+      clouds[i*4]=x;clouds[i*4+1]=y;
       clouds[i*4+2]=Math.cos(c.angle);clouds[i*4+3]=Math.sin(c.angle);
-      material[i*4]=.28*(c.x-materialOrigins[i*2]);material[i*4+1]=.28*(c.y-materialOrigins[i*2+1]);
-      material[i*4+2]=c.vx;material[i*4+3]=c.vy;
+      material[i*4]=.28*(x-materialOrigins[i*2]);material[i*4+1]=.28*(y-materialOrigins[i*2+1]);
+      material[i*4+2]=c.vx+pressureVelocity[k];material[i*4+3]=c.vy+pressureVelocity[k+1];
     }
     // Double-precision phases become bounded GPU uniforms: smooth even after days.
     motion.set([Math.sin(flowClock*.019),Math.cos(flowClock*.013),Math.sin(flowClock*.011),Math.cos(flowClock*.017)]);
@@ -927,7 +1004,7 @@ canvas{display:block;width:100%;height:100%}
   }
   function render(){
     gl.useProgram(programs[0]);gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,w,h);
-    gl.uniform2f(loc.res,w,h);gl.uniform4fv(loc.motion,motion);gl.uniform4fv(loc.clouds,clouds);gl.uniform4fv(loc.material,material);gl.uniform4fv(loc.dance,dance);gl.uniform4fv(loc.thumps,thumps);gl.uniform2f(loc.bass,clamp(bassVisual[0]),clamp(bassVisual[1]));gl.uniform4fv(loc.music,music);gl.uniform4fv(loc.energy,energy);gl.uniform4fv(loc.sizes,sizes);gl.uniform1fv(loc.bands,bands);gl.uniform4fv(loc.lights,lightEnergy);
+    gl.uniform2f(loc.res,w,h);gl.uniform4fv(loc.motion,motion);gl.uniform4fv(loc.clouds,clouds);gl.uniform4fv(loc.material,material);gl.uniform4fv(loc.dance,dance);gl.uniform4fv(loc.thumps,thumps);gl.uniform2f(loc.bass,clamp(bassVisual[0]),clamp(bassVisual[1]));gl.uniform4fv(loc.music,renderMusic);gl.uniform4fv(loc.energy,renderEnergy);gl.uniform4fv(loc.sizes,sizes);gl.uniform1fv(loc.bands,renderBands);gl.uniform4fv(loc.lights,lightEnergy);
     gl.uniform4fv(loc.edgeEnergy,edgeEnergy);gl.uniform4fv(loc.edgeLights,edgeLights);gl.uniform4fv(loc.edgeMusic,edgeMusic);gl.uniform1fv(loc.edgeBands,edgeBands);
     gl.drawArrays(gl.TRIANGLES,0,3);
     gpuFence=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0);
