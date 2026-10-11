@@ -119,18 +119,24 @@ canvas{display:block;width:100%;height:100%}
       // Paint travels with its cloud, but does not stretch/reseed when musical
       // energy changes its footprint. Shape and texture motion are independent.
       float seed=19.7+float(i)*43.13,angle=.31+float(i)*1.173;
-      vec2 p=mat2(cos(angle),sin(angle),-sin(angle),cos(angle))*(local[i]*u_sizes[i]/.94);
+      // Carry every material layer along the actual signed cloud trajectory.
+      // Project screen-space travel into its current local frame before the
+      // seeded orientation. Subtracting sample coordinates moves paint in the
+      // SAME direction as travel, including reversals and exchanging paths.
+      vec2 axis=u_clouds[i].zw,travel=u_material[i].xy*vec2(aspect,1.);
+      vec2 paintTravel=vec2(dot(travel,axis),dot(travel,vec2(-axis.y,axis.x)))/.94;
+      vec2 p=mat2(cos(angle),sin(angle),-sin(angle),cos(angle))*(local[i]*u_sizes[i]/.94-paintTravel);
       p*=vec2(.94+float(i)*.035,1.06-float(i)*.025);
       // Each cloud has an independent lattice, orientation and gentle domain
       // warp. Seeds never change; audio cannot reseed or rock fine texture.
-      vec2 warpPoint=p*1.2+u_material[i].xy*.30;
+      vec2 warpPoint=p*1.2+vec2(0.,.30);
       p+=.16*(vec2(noise(warpPoint,seed+113.),noise(warpPoint+7.1,seed+271.))-.5);
-      float mist=fbm(p*2.9+u_material[i].xy*1.7,seed);
-      float grain=fbm(vec2(p.x*9.7,p.y*15.1)+u_material[i].zw*.8,seed+331.);
+      float mist=fbm(p*2.9+vec2(0.,1.7),seed);
+      float grain=fbm(vec2(p.x*9.7,p.y*15.1)+vec2(0.,.8),seed+331.);
       float pigmentDepth=.06+1.6*pow(smoothstep(.20,.77,mist),2.);
       density[i]=pigmentDepth*(.40+.90*pow(smoothstep(.17,.80,grain),1.4));
       vec2 plane=vec2(p.x*.64+p.y*.77,-p.x*.77+p.y*.64);
-      float layers=fbm(vec2(plane.x*3.9,plane.y*38.)+u_material[i].xw*.55,seed+719.);
+      float layers=fbm(vec2(plane.x*3.9,plane.y*38.)+vec2(0.,.55),seed+719.);
       detail[i]=pow(smoothstep(.26,.72,layers),2.);
       vec2 slope=vec2(dFdx(mist)*u_resolution.x,dFdy(mist)*u_resolution.y)*.40;
       vec3 normal=normalize(vec3(-slope,.85));
@@ -231,6 +237,10 @@ canvas{display:block;width:100%;height:100%}
   const hitFitAges=new Float64Array(HIT_EVENTS),hitFitWeights=new Float64Array(HIT_EVENTS);
   let hitSamplePosition=0,hitSampleCount=0;
   const materialClock=new Float64Array(4),material=new Float32Array(16);
+  // A fixed origin per colored volume, never reassigned during an exchange.
+  // Bounded position displacement replaces ever-growing texture integrals;
+  // the remaining material lanes carry its actual signed velocity.
+  const materialOrigins=Float64Array.from(cloudStates.flatMap(c=>[c.x,c.y]));
   let amplitudeReady=false,desiredTempo=0,desiredConfidence=0;
   // 45 seconds at 2 Hz: power, four regional powers, confidence-weighted
   // tempo, confidence and rhythm drive. Never audio or GPU history textures.
@@ -254,7 +264,7 @@ canvas{display:block;width:100%;height:100%}
   // pair exchange uses a zero-velocity/acceleration ease and separate arcs.
   const pathSlots=new Uint8Array([0,1,2,3]),pathCentres=new Float64Array(8);
   let exchangeA=-1,exchangeB=-1,exchangeStarted=0;
-  const EXCHANGE_DURATION=60;
+  const EXCHANGE_DURATION=30;
   let lastCloudIds=null,legacyPrevious=new Float32Array(4),legacyMean=new Float32Array(4),legacyAt=new Float64Array(4);
   const presets={silence:[0,0,96],gentle:[.17,.16,78],rhythm:[.52,.65,112],intense:[.88,1,138]};
 
@@ -713,7 +723,9 @@ canvas{display:block;width:100%;height:100%}
     // Preserve quiet-passage travel. Bounded rhythm context adds a modest boost
     // only during louder phrases, eased over 1.2 s. Velocity inertia stays intact.
     const loud=clamp((driftLevel-.40)/.50),intensity=loud*loud*(3-2*loud);
-    const speed=1+.28*driftLevel+.20*driftActivity+.24*intensity+.20*intensity*driftRhythm;
+    // The same smooth confirmed-bass drive that opens blue's hit ceiling adds
+    // up to 25% travel, then releases toward the existing quiet-passage speed.
+    const speed=(1+.28*driftLevel+.20*driftActivity+.24*intensity+.20*intensity*driftRhythm)*(1+.25*clamp(bassVisual[0]));
     flowClock+=dt*speed;
     pulse.fill(0);lightTargets.fill(0);thumpTargets.fill(0);
     for(const light of lights){
@@ -795,13 +807,10 @@ canvas{display:block;width:100%;height:100%}
       phraseImpact[i]+=(detectorImpact-phraseImpact[i])*(1-Math.exp(-dt/1.2));
       amplitudeReference[i]+=(levelNow-amplitudeReference[i])*(1-Math.exp(-dt/1.8));
       settle(dance,danceVelocity,i,groove,14,dt,1.8,10);
-      // Modulate forward advection SPEED, never displacement. Lower energy
-      // slows the material down; it cannot yank the painted texture backwards.
+      // Retain the existing groove clocks. Visible material transport below
+      // follows actual cloud travel, rather than an independent oscillation.
       flowDrive[i]+=(groove-flowDrive[i])*(1-Math.exp(-dt/.10));
       materialClock[i]+=dt*speed*(1+.35*phraseEnergy[i]+3*flowDrive[i]);
-      const phase=materialClock[i];
-      material[i*4]=Math.sin(phase*.019);material[i*4+1]=Math.cos(phase*.013);
-      material[i*4+2]=Math.sin(phase*.011);material[i*4+3]=Math.cos(phase*.017);
       // Shared colors evolve on a phrase-scale envelope, independently of the
       // quick core pulse. Retargeting preserves velocity through dense rhythms.
       settle(edgeEnergy,edgeEnergyVelocity,i,phraseEnergy[i],7,dt);
@@ -891,18 +900,26 @@ canvas{display:block;width:100%;height:100%}
       }
       const length=Math.max(1,Math.hypot(fx,fy));flowForces[i*2]=fx/length;flowForces[i*2+1]=fy/length;
     }
+    // Halving the path duration must also accelerate the exchanging volumes.
+    // Ease that extra travel in/out with zero-slope quintic joins; retain
+    // current velocity rather than snapping positions to their target paths.
+    const exchangePhase=exchangeA>=0?clamp((flowClock-exchangeStarted)/EXCHANGE_DURATION):0;
+    const exchangeTravel=1+easeHit(clamp(exchangePhase/.12))*easeHit(clamp((1-exchangePhase)/.12));
     for(let i=0;i<4;i++){
-      const c=cloudStates[i],ease=1-Math.exp(-dt/3.5);
+      const c=cloudStates[i],travel=i===exchangeA||i===exchangeB?exchangeTravel:1;
+      const ease=1-Math.exp(-dt*travel/3.5);
       // Retain spectral inertia even when a crowded pair saturates the force
       // limit. Equal dominance/silence keeps the original travel response.
       const response=1+.32*(meanMass-cloudMass[i]);
-      c.vx+=(flowForces[i*2]*.0052*speed*response-c.vx)*ease;c.vy+=(flowForces[i*2+1]*.0052*speed*response-c.vy)*ease;
+      c.vx+=(flowForces[i*2]*.0052*speed*response*travel-c.vx)*ease;c.vy+=(flowForces[i*2+1]*.0052*speed*response*travel-c.vy)*ease;
       c.x+=c.vx*dt;c.y+=c.vy*dt;
       c.angle+=(-.08+.16*Math.sin(flowClock*.012+i*1.9)+c.vy*10-c.angle)*(1-Math.exp(-dt/4));
       // The cloud/material anchor follows only the smooth persistent flow.
       // Rhythmic flex does not translate or reseed these fine-detail samples.
       clouds[i*4]=c.x;clouds[i*4+1]=c.y;
       clouds[i*4+2]=Math.cos(c.angle);clouds[i*4+3]=Math.sin(c.angle);
+      material[i*4]=.28*(c.x-materialOrigins[i*2]);material[i*4+1]=.28*(c.y-materialOrigins[i*2+1]);
+      material[i*4+2]=c.vx;material[i*4+3]=c.vy;
     }
     // Double-precision phases become bounded GPU uniforms: smooth even after days.
     motion.set([Math.sin(flowClock*.019),Math.cos(flowClock*.013),Math.sin(flowClock*.011),Math.cos(flowClock*.017)]);
@@ -964,6 +981,7 @@ canvas{display:block;width:100%;height:100%}
 </script>
 </body>
 </html>
+
 
 
 
