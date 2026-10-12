@@ -1091,7 +1091,7 @@ canvas{display:block;width:100%;height:100%}
       const x=exchangeWorld[i*4]+pressureOffsets[k],y=exchangeWorld[i*4+1]+pressureOffsets[k+1];
       clouds[i*4]=x;clouds[i*4+1]=y;
       clouds[i*4+2]=Math.cos(c.angle);clouds[i*4+3]=Math.sin(c.angle);
-      material[i*4]=.28*(x-materialOrigins[i*2]);material[i*4+1]=.28*(y-materialOrigins[i*2+1]);
+      material[i*4]=.04*(x-materialOrigins[i*2]);material[i*4+1]=.04*(y-materialOrigins[i*2+1]);
       material[i*4+2]=exchangeWorld[i*4+2]+pressureVelocity[k];material[i*4+3]=exchangeWorld[i*4+3]+pressureVelocity[k+1];
     }
     renderSizes.set(sizes);
@@ -1165,8 +1165,3 @@ canvas{display:block;width:100%;height:100%}
 </script>
 </body>
 </html>
-
-
-
-
-
