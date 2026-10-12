@@ -124,16 +124,20 @@ canvas{display:block;width:100%;height:100%}
       p*=vec2(.94+float(i)*.035,1.06-float(i)*.025);
       // Each cloud has an independent lattice, orientation and gentle domain
       // warp. Seeds never change; audio cannot reseed or rock fine texture.
-      vec2 warpPoint=p*1.2+vec2(0.,.30);
+      vec2 evolution=vec2(u_motion.x+.35*u_motion.z,u_motion.y+.35*u_motion.w);
+      vec2 warpPoint=p*1.2+vec2(0.,.30)+evolution*(.16+.025*float(i));
       p+=.16*(vec2(noise(warpPoint,seed+113.),noise(warpPoint+7.1,seed+271.))-.5);
       float mist=fbm(p*2.9+vec2(0.,1.7),seed);
       float grain=fbm(vec2(p.x*9.7,p.y*15.1)+vec2(0.,.8),seed+331.);
-      float pigmentDepth=.06+1.6*pow(smoothstep(.20,.77,mist),2.);
-      density[i]=pigmentDepth*(.40+.90*pow(smoothstep(.17,.80,grain),1.4));
       vec2 plane=vec2(p.x*.64+p.y*.77,-p.x*.77+p.y*.64);
       float layers=fbm(vec2(plane.x*3.9,plane.y*38.)+vec2(0.,.55),seed+719.);
-      detail[i]=pow(smoothstep(.26,.72,layers),2.);
-      vec2 slope=vec2(dFdx(mist)*u_resolution.x,dFdy(mist)*u_resolution.y)*.40;
+      float veil=fbm(vec2(plane.x*7.6,plane.y*25.)+evolution.yx*.13+vec2(2.4,-.9),seed+947.);
+      float filament=pow(1.-abs(2.*smoothstep(.25,.73,veil)-1.),3.);
+      float pigmentDepth=.095+1.62*pow(smoothstep(.19,.77,mist),1.9);
+      density[i]=pigmentDepth*(.47+.88*pow(smoothstep(.16,.80,grain),1.35))*(.78+.40*filament);
+      detail[i]=pow(smoothstep(.25,.71,layers),2.)*(.78+.44*filament)+.22*filament*pow(smoothstep(.24,.73,grain),2.);
+      float relief=mist+.025*(veil-.5)+.008*(grain-.5);
+      vec2 slope=vec2(dFdx(relief)*u_resolution.x,dFdy(relief)*u_resolution.y)*.40;
       vec3 normal=normalize(vec3(-slope,.85));
       sheen[i]=pow(max(0.,dot(normal,normalize(vec3(-.35,.24,1.)))),9.);
       ray[i]=spot(local[i],vec2(-.17,.02),vec2(.60,.17));
@@ -278,7 +282,7 @@ canvas{display:block;width:100%;height:100%}
   // pair exchange uses a zero-velocity/acceleration ease and separate arcs.
   const pathSlots=new Uint8Array([0,1,2,3]),pathCentres=new Float64Array(8);
   let exchangeA=-1,exchangeB=-1,exchangeStarted=-60;
-  const EXCHANGE_DURATION=14,EXCHANGE_INTERVAL=60;
+  const EXCHANGE_DURATION=35,EXCHANGE_INTERVAL=60;
   const exchangeWorld=new Float64Array(16);
   let lastCloudIds=null,legacyPrevious=new Float32Array(4),legacyMean=new Float32Array(4),legacyAt=new Float64Array(4);
   const presets={silence:[0,0,96],gentle:[.17,.16,78],rhythm:[.52,.65,112],intense:[.88,1,138]};
