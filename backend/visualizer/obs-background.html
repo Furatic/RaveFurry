@@ -914,7 +914,7 @@ canvas{display:block;width:100%;height:100%}
       balanceSum+=phraseBalance[i];
     }
     const bassShare=phraseBalance[0]/Math.max(.0001,balanceSum);
-    const bassDominance=clamp((bassShare-.36)/.36);
+    const bassDominance=clamp((bassShare-.30)/.36);
     const bassSustain=Math.max(clamp((bassHitPressure-.70)/1.60),bassHoldTarget);
     const blueEvidence=bassDominance*bassSustain*clamp(bodyEnergy[0]*2.5);
     blueSupport+=(blueEvidence-blueSupport)*(1-Math.exp(-dt/(blueEvidence>blueSupport?1.8:.45)));
