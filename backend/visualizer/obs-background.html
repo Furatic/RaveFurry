@@ -282,7 +282,7 @@ canvas{display:block;width:100%;height:100%}
   // pair exchange uses a zero-velocity/acceleration ease and separate arcs.
   const pathSlots=new Uint8Array([0,1,2,3]),pathCentres=new Float64Array(8);
   let exchangeA=-1,exchangeB=-1,exchangeStarted=-60;
-  const EXCHANGE_DURATION=35,EXCHANGE_INTERVAL=60;
+  const EXCHANGE_DURATION=14,EXCHANGE_INTERVAL=120;
   const exchangeWorld=new Float64Array(16);
   let lastCloudIds=null,legacyPrevious=new Float32Array(4),legacyMean=new Float32Array(4),legacyAt=new Float64Array(4);
   const presets={silence:[0,0,96],gentle:[.17,.16,78],rhythm:[.52,.65,112],intense:[.88,1,138]};
