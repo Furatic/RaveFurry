@@ -974,6 +974,11 @@
             filter 240ms ease,
             visibility 0s;
     }
+
+    .furatic-own-vote-tooltip.is-below { transform: translate3d(-50%, 12px, 0) scale(0.94); transform-origin: top center; }
+    .furatic-own-vote-tooltip.is-below.is-visible { transform: translate3d(-50%, 12px, 0) scale(1); }
+    .furatic-own-vote-tooltip.is-below::before,
+    .furatic-own-vote-tooltip.is-below::after { top: auto; bottom: 100%; border-top: 0; border-bottom: 11px solid rgba(0,0,0,0.5); }
     
     .furatic-own-vote-tooltip::before {
         content: "";
@@ -1064,6 +1069,8 @@
     #toast-container {
         pointer-events: none;
         z-index: 9999;
+        padding: 12px;
+        height: var(--furatic-visible-height, 100dvh) !important;
     }
 
     #toast-container .toast {
@@ -1080,7 +1087,8 @@
             0 18px 46px rgba(0,0,0,0.42) !important;
         -webkit-backdrop-filter: blur(24px) saturate(130%);
         backdrop-filter: blur(24px) saturate(130%);
-        overflow: hidden;
+        max-height: calc(var(--furatic-visible-height, 100dvh) - 24px);
+        overflow-y: auto;
     }
 
     #toast-container .toast-header {
@@ -1097,6 +1105,13 @@
     #toast-container .toast-content {
         color: rgba(238, 244, 255, 0.88) !important;
         line-height: 1.28;
+        min-width: 0;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    html.furatic-framed #toast-container .toast {
+        min-width: min(420px, calc(100vw - var(--desktop-side-space, 0px) - 68px));
+        max-width: min(420px, calc(100vw - var(--desktop-side-space, 0px) - 68px));
     }
 
     #vote-timeout {
@@ -1555,6 +1570,43 @@
     @media (max-width: 460px) { html.furatic-framed #current-song-card { margin-left: -14px; margin-right: -14px; } }
     @media (prefers-reduced-motion: reduce) { #auto-queue-toggle > i, #auto-queue-preview, .auto-queue-expanded-note, .furatic-icon-button, .auto-queue-thumbnail { transition: none; } }
 
+    .extended-queue-heading { display: none; }
+    html.furatic-desktop-panels .furatic-embed-shell {
+        position: relative;
+        padding-left: calc(30px + var(--desktop-side-space, 76px));
+        transition: padding-left 520ms cubic-bezier(.22,1,.36,1);
+    }
+    html.furatic-desktop-panels .furatic-embed-shell > ul,
+    html.furatic-desktop-panels .furatic-queue-middle { position: relative; z-index: 6; }
+    html.furatic-desktop-panels .furatic-queue-middle { overflow: visible; }
+    html.furatic-desktop-panels .furatic-queue-drawer {
+        position: fixed; inset: 6px auto 14px 18px; width: 440px; z-index: 2;
+        border: 1px solid var(--furatic-border); box-shadow: var(--furatic-shadow);
+    }
+    html.furatic-desktop-panels .furatic-queue-middle { position: static; z-index: auto; }
+    html.furatic-desktop-panels #main-queue-scroll { position: relative; z-index: 6; opacity: 1; }
+    html.furatic-desktop-panels .furatic-queue-middle:has(.furatic-queue-drawer.is-open) #main-queue-scroll { opacity: 1; }
+    html.furatic-desktop-panels .extended-queue-heading { display: flex; }
+    html.furatic-desktop-panels #auto-queue-dock {
+        position: absolute; inset: 6px auto 14px calc(var(--desktop-side-space, 76px) - 52px);
+        width: 54px; min-height: 0; margin: 0; padding: 12px 7px; z-index: 8;
+        display: flex; flex-direction: column; align-items: center; gap: 12px;
+        transition: left 520ms cubic-bezier(.22,1,.36,1);
+    }
+    html.furatic-desktop-panels #auto-queue-toggle { flex-direction: column-reverse; gap: 14px; padding: 0; }
+    html.furatic-desktop-panels #auto-queue-toggle strong { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; }
+    html.furatic-desktop-panels #auto-queue-toggle > i { transform: rotate(-90deg); }
+    html.furatic-desktop-panels #auto-queue-toggle[aria-expanded="true"] > i { transform: rotate(90deg); }
+    html.furatic-desktop-panels #auto-queue-preview { grid-template-columns: 1fr; width: 38px; overflow-y: auto; min-height: 0; }
+    html.furatic-desktop-panels #auto-queue-preview.is-empty { writing-mode: vertical-rl; width: auto; }
+    html.furatic-desktop-panels .auto-queue-thumbnail { flex-shrink: 0; }
+    html.furatic-desktop-panels .auto-queue-expanded-note { display: none; }
+    html.furatic-desktop-panels #toast-container { padding-left: calc(12px + var(--desktop-side-space, 76px)); transition: padding-left 520ms cubic-bezier(.22,1,.36,1); }
+    @media (prefers-reduced-motion: reduce) {
+        html.furatic-desktop-panels .furatic-embed-shell, html.furatic-desktop-panels #auto-queue-dock,
+        html.furatic-desktop-panels #toast-container { transition: none; }
+    }
+
 </style>
 
 <div class="furatic-embed-shell">
@@ -1612,7 +1664,8 @@
 
     <div class="furatic-queue-middle">
         <div id="main-queue-scroll" class="furatic-list-scroll"><ul class="list-group" id="song-queue"></ul></div>
-        <section id="auto-drawer" class="furatic-queue-drawer" aria-label="Auto Queue" aria-hidden="true" hidden inert>
+        <section id="auto-drawer" class="furatic-queue-drawer" aria-label="Extended Queue" aria-hidden="true" hidden inert>
+            <div class="furatic-drawer-heading extended-queue-heading"><strong>Extended Queue</strong></div>
             <p class="furatic-drawer-note">Voting starts after it enters the main queue.</p>
             <div class="furatic-list-scroll"><ul class="list-group" id="auto-song-queue"></ul><p id="auto-queue-empty" class="furatic-drawer-note">No extra songs waiting.</p></div>
         </section>
@@ -1621,8 +1674,8 @@
             <div class="furatic-list-scroll"><ul class="list-group" id="history-song-queue"></ul><p id="history-status" class="furatic-drawer-note" role="status"></p><button id="history-more" type="button" class="furatic-list-more" hidden>Show earlier songs</button></div>
         </section>
     </div>
-    <section id="auto-queue-dock" class="list-group-item" aria-label="Auto Queue preview">
-        <button id="auto-queue-toggle" type="button" aria-expanded="false" aria-controls="auto-drawer"><strong>Auto Queue <span id="auto-queue-count">0</span></strong><i class="fas fa-chevron-up" aria-hidden="true"></i></button>
+    <section id="auto-queue-dock" class="list-group-item" aria-label="Extended Queue preview">
+        <button id="auto-queue-toggle" type="button" aria-expanded="false" aria-controls="auto-drawer"><strong>Extended Queue <span id="auto-queue-count">0</span></strong><i class="fas fa-chevron-up" aria-hidden="true"></i></button>
         <div id="auto-queue-preview">No extra songs waiting.</div>
         <p class="auto-queue-expanded-note">Voting starts after it enters the main queue.</p>
     </section>
@@ -2009,9 +2062,13 @@
             if (minLeft <= maxLeft) {
                 left = Math.max(minLeft, Math.min(maxLeft, left));
             }
+            arrowLeft = Math.max(18, Math.min(tooltipRect.width - 18,
+                buttonRect.left + buttonRect.width / 2 - (left - tooltipRect.width / 2))).toFixed(2) + "px";
         }
     
-        const top = Math.max(tooltipRect.height + 18, buttonRect.top);
+        const below = !isQueueAnchoredButton && buttonRect.top < tooltipRect.height + 18;
+        tooltip.classList.toggle("is-below", below);
+        const top = below ? buttonRect.bottom : Math.max(tooltipRect.height + 18, buttonRect.top);
     
         tooltip.style.setProperty("--furatic-tooltip-arrow-left", arrowLeft);
         tooltip.style.left = left.toFixed(2) + "px";
