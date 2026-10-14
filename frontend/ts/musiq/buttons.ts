@@ -5,6 +5,44 @@ import {
 } from '../base';
 
 let musicRequestInFlight = false;
+const completedDownloads = new Set<number>();
+const notificationStartedAt = Date.now() / 1000;
+let notificationCursor = 0;
+let notificationPollRunning = false;
+let notificationPollingStarted = false;
+
+function requestAccepted(response, query) {
+  if (response.pending) {
+    if (!completedDownloads.has(Number(response.key))) infoToast('Downloading your song…', '"' + query + '"', 0);
+  } else {
+    successToast(response.message, '"' + query + '"');
+  }
+}
+
+async function pollDownloadNotifications() {
+  if (notificationPollRunning) return;
+  notificationPollRunning = true;
+  const abort = new AbortController();
+  const timeout = window.setTimeout(() => abort.abort(), 9000);
+  try {
+    const response = await fetch('/api/notifications/?after=' + notificationCursor, {credentials: 'same-origin', cache: 'no-store', signal: abort.signal});
+    if (!response.ok) return;
+    const result = await response.json();
+    notificationCursor = Math.max(notificationCursor, Number(result.latest || 0));
+    for (const item of result.notifications || []) {
+      if (!String(item.kind).startsWith('song_request_') || item.createdAt < notificationStartedAt) continue;
+      if (item.kind === 'song_request_ready') {
+        completedDownloads.add(Number(item.requestKey));
+        successToast(item.message, '"' + item.title + '"');
+      } else {
+        if (!item.message.includes('trying again in 30 seconds')) completedDownloads.add(Number(item.requestKey));
+        errorToast(item.message, '"' + item.title + '"');
+      }
+    }
+  } catch (_error) {
+    // Keep the cursor so a temporary connection failure does not lose the result.
+  } finally { window.clearTimeout(timeout); notificationPollRunning = false; }
+}
 
 /** Finds the song key to a given HTML element.
  * @param {HTMLElement} element an element that is part of a queue entry
@@ -80,11 +118,11 @@ export function requestArchivedMusic(key, query,
         playlist: playlistEnabled(),
         platform: platform,
       }).done(function(response) {
-    successToast(response.message, '"' + query + '"');
+    requestAccepted(response, query);
   }).fail(function(response) {
     errorToast(response.responseText, '"' + query + '"');
   });
-  infoToast('searching...', '"' + query + '"');
+  infoToast(playlistEnabled() ? 'searching...' : 'Downloading your song…', '"' + query + '"', playlistEnabled() ? 2000 : 0);
   $('#music-input').val('').trigger('change');
   disablePlaylistMode();
 }
@@ -105,13 +143,13 @@ export function requestNewMusic(query, platform = localStorageGet('platform')) {
         playlist: playlistEnabled(),
         platform: platform,
       }).done(function(response) {
-    successToast(response.message, '"' + query + '"');
+    requestAccepted(response, query);
   }).fail(function(response) {
     errorToast(response.responseText, '"' + query + '"');
   }).always(function() {
     musicRequestInFlight = false;
   });
-  infoToast('searching...', '"' + query + '"');
+  infoToast(playlistEnabled() ? 'searching...' : 'Downloading your song…', '"' + query + '"', playlistEnabled() ? 2000 : 0);
   $('#music-input').val('').trigger('change');
   disablePlaylistMode();
 }
@@ -139,6 +177,11 @@ function showTitleModal(element, duration, url) {
 
 /** Adds handlers for all buttons. */
 export function onReady() {
+  if (!notificationPollingStarted) {
+    notificationPollingStarted = true;
+    void pollDownloadNotifications();
+    window.setInterval(pollDownloadNotifications, 2000);
+  }
   $('#playlist-mode').on('click tap', function(e) {
     if ($(this).hasClass('icon-disabled')) {
       $(this).removeClass('icon-disabled');
@@ -230,7 +273,6 @@ export function onReady() {
 
   // info popup for the current song
   $('#current-song-title').on('click tap', function() {
-    // The embedded player now links directly; retain the legacy title modal elsewhere.
     if (this.tagName === 'A' || state == null || state.currentSong == null) {
       return;
     }
