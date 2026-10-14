@@ -26,9 +26,12 @@ from core.settings import system
 from core.settings import wifi
 from core import state_handler
 from core import ui_notifications
+from core import visualizer
 from core.authentication import ModeratorAuthenticationForm
 
 urlpatterns: List[Union[URLPattern, URLResolver]] = [
+    path("visualizer/background/", visualizer.background, name="visualizer-background"),
+    path("visualizer/features.json", visualizer.features, name="visualizer-features"),
     path("", base.landing, name="base"),
     path("afterhours/", base.afterhours, name="afterhours"),
     path("p/", musiq.embed, name="musiq"),
