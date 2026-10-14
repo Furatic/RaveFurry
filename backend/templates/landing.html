@@ -83,7 +83,9 @@
 
       .shell {
         width: min(100%, 1080px);
+        min-width: 0;
         display: grid;
+        grid-template-columns: minmax(0, 1fr);
         gap: 16px;
       }
 
@@ -662,29 +664,30 @@
       @media (min-width: 1581px) {
         .player-layout {
           left: 50%; margin: 0; translate: -50% 0; gap: 0;
-          width: min(calc(100vw - 56px), calc(620px + var(--desktop-side-space, 76px)));
-          transition: width 520ms cubic-bezier(.22,1,.36,1);
+          min-width: 0;
+          width: min(calc(100vw - 56px), calc(620px + var(--desktop-side-space, 120px)));
+          transition: width 600ms cubic-bezier(.4,0,.2,1);
         }
         .player-layout::before {
-          content: ""; flex: 0 0 var(--desktop-side-space, 76px);
-          transition: flex-basis 520ms cubic-bezier(.22,1,.36,1);
+          content: ""; flex: 0 0 var(--desktop-side-space, 120px);
+          transition: flex-basis 600ms cubic-bezier(.4,0,.2,1);
         }
         .player-layout .player-card {
-          width: calc(100% - var(--desktop-side-space, 76px));
-          flex-basis: calc(100% - var(--desktop-side-space, 76px));
-          transition: width 520ms cubic-bezier(.22,1,.36,1), flex-basis 520ms cubic-bezier(.22,1,.36,1),
+          width: calc(100% - var(--desktop-side-space, 120px));
+          flex-basis: calc(100% - var(--desktop-side-space, 120px));
+          transition: width 600ms cubic-bezier(.4,0,.2,1), flex-basis 600ms cubic-bezier(.4,0,.2,1),
             opacity 760ms cubic-bezier(.22,1,.36,1), filter 1080ms cubic-bezier(.22,1,.36,1), transform 520ms cubic-bezier(.22,1,.36,1), box-shadow 220ms ease;
         }
         .player-layout.is-tv-open { width: min(calc(100vw - 56px), 1640px); }
         .player-layout.is-tv-open .player-card {
-          width: calc((100% - var(--desktop-side-space, 76px) - 14px) * .4);
-          flex-basis: calc((100% - var(--desktop-side-space, 76px) - 14px) * .4);
+          width: calc((100% - var(--desktop-side-space, 120px) - 14px) * .4);
+          flex-basis: calc((100% - var(--desktop-side-space, 120px) - 14px) * .4);
         }
         body.is-ready .player-layout.is-tv-open .player-card { transform: scale(1); }
         #queue-player-frame {
-          width: calc(100% + 40px + var(--desktop-side-space, 76px));
-          margin-left: calc(-20px - var(--desktop-side-space, 76px));
-          transition: width 520ms cubic-bezier(.22,1,.36,1), margin-left 520ms cubic-bezier(.22,1,.36,1), height 400ms cubic-bezier(.22,1,.36,1);
+          width: calc(100% + 40px + var(--desktop-side-space, 120px));
+          margin-left: calc(-20px - var(--desktop-side-space, 120px));
+          transition: width 600ms cubic-bezier(.4,0,.2,1), margin-left 600ms cubic-bezier(.4,0,.2,1), height 400ms cubic-bezier(.22,1,.36,1);
         }
         .player-layout .tv-panel {
           margin-left: 0; min-width: 0; max-width: none; height: var(--queue-height, min(64.6vh, 748px));
@@ -693,8 +696,8 @@
             opacity 320ms cubic-bezier(.22,1,.36,1), transform 620ms cubic-bezier(.22,1,.36,1), height 400ms cubic-bezier(.22,1,.36,1);
         }
         .player-layout.is-tv-open .tv-panel {
-          flex: 0 0 calc((100% - var(--desktop-side-space, 76px) - 14px) * .6);
-          width: calc((100% - var(--desktop-side-space, 76px) - 14px) * .6);
+          flex: 0 0 calc((100% - var(--desktop-side-space, 120px) - 14px) * .6);
+          width: calc((100% - var(--desktop-side-space, 120px) - 14px) * .6);
           min-width: 0; max-width: none; margin-left: 14px;
           height: var(--queue-height, min(64.6vh, 748px));
         }
@@ -1113,7 +1116,7 @@
         }
         function setDrawer(drawer) {
           leftDrawer = drawer;
-          const space = desktopQuery.matches ? (drawer ? 530 : 76) : 0;
+          const space = desktopQuery.matches ? (drawer ? 570 : 120) : 0;
           playerLayout.style.setProperty("--desktop-side-space", space + "px");
           queuePanels()?.setSpace(space);
         }
