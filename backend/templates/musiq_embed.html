@@ -1550,14 +1550,14 @@
     #auto-song-queue .queue-vote-cluster { min-width: 2ch; }
     .vote-up[aria-disabled="true"], .vote-down[aria-disabled="true"] { opacity: .65; }
     #furatic-closing-banner { flex: 0 0 auto; overflow-y: auto; }
-    #furatic-closing-banner.is-visible { max-height: min(100px, 24vh); }
+    #furatic-closing-banner.is-visible { max-height: min(220px, 44vh); }
     .furatic-embed-shell:has(#furatic-closing-banner.is-visible) .furatic-queue-middle { min-height: 0; }
     #main-queue-scroll { transition: opacity var(--queue-panel-duration, 420ms) cubic-bezier(.4,0,.2,1); }
     .furatic-queue-middle:has(.furatic-queue-drawer.is-open) #main-queue-scroll { opacity: 0; }
     #auto-queue-preview.is-empty { grid-template-columns: 1fr; align-items: center; min-height: 44px; }
     .ui-autocomplete { max-height: min(240px, 32vh); overflow-y: auto; }
     @media (max-width: 620px) { #current-song-card { margin-left: -6px; margin-right: -6px; } }
-    @media (max-height: 420px) { #music-input-card .clearable { min-height: 40px; } #current-song { padding-top: 10px !important; padding-bottom: 10px !important; grid-template-rows: minmax(50px, auto) auto; } #current-song .current-song-artwork { width: 50px; height: 50px; flex-basis: 50px; } #furatic-closing-banner.is-visible { max-height: 70px; } #auto-queue-dock { flex-basis: 82px; min-height: 82px; } .auto-queue-thumbnail { height: 34px; } #current-song.present { min-height: 120px; } }
+    @media (max-height: 420px) { #music-input-card .clearable { min-height: 40px; } #current-song { padding-top: 10px !important; padding-bottom: 10px !important; grid-template-rows: minmax(50px, auto) auto; } #current-song .current-song-artwork { width: 50px; height: 50px; flex-basis: 50px; } #furatic-closing-banner.is-visible { max-height: min(120px, 28vh); } #auto-queue-dock { flex-basis: 82px; min-height: 82px; } .auto-queue-thumbnail { height: 34px; } #current-song.present { min-height: 120px; } }
     /* Match the parent's transparent 20px gutters without widening its surface
        or moving Search, the ordinary queue and Auto Queue from their old edges. */
     html.furatic-framed .furatic-embed-shell { padding-left: 30px; padding-right: 30px; }
