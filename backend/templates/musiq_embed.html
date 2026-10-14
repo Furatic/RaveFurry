@@ -1574,7 +1574,7 @@
     html.furatic-desktop-panels .furatic-embed-shell {
         position: relative;
         --queue-panel-duration: 600ms;
-        padding-left: calc(30px + var(--desktop-side-space, 120px));
+        padding-left: calc(30px + var(--desktop-side-space, 136px));
         transition: padding-left 600ms cubic-bezier(.4,0,.2,1);
     }
     html.furatic-desktop-panels .furatic-embed-shell > ul,
@@ -1583,7 +1583,7 @@
     html.furatic-desktop-panels .furatic-queue-drawer {
         position: fixed; inset: 6px auto 14px 18px; width: 440px; z-index: 2;
         border: 1px solid var(--furatic-border); box-shadow: var(--furatic-shadow);
-        clip-path: inset(0 max(0px, calc(458px - var(--desktop-side-space, 120px))) 0 0);
+        clip-path: inset(0 max(0px, calc(458px - var(--desktop-side-space, 136px))) 0 0);
         transition: clip-path 600ms cubic-bezier(.4,0,.2,1);
     }
     html.furatic-desktop-panels .furatic-queue-middle { position: static; z-index: auto; }
@@ -1591,10 +1591,10 @@
     html.furatic-desktop-panels .furatic-queue-middle:has(.furatic-queue-drawer.is-open) #main-queue-scroll { opacity: 1; }
     html.furatic-desktop-panels .extended-queue-heading { display: flex; }
     html.furatic-desktop-panels #auto-queue-dock {
-        position: absolute; inset: 6px auto 14px calc(var(--desktop-side-space, 120px) - 96px);
-        width: 94px; min-height: 0; margin: 0; padding: 12px 7px; z-index: 8;
+        position: absolute; inset: 6px auto 14px 18px;
+        width: 110px; min-height: 0; margin: 0; padding: 12px 7px; z-index: 8;
         display: flex; flex-direction: column; align-items: center; gap: 12px;
-        transition: left 600ms cubic-bezier(.4,0,.2,1);
+        transition: width 600ms cubic-bezier(.4,0,.2,1);
     }
     html.furatic-desktop-panels #auto-queue-toggle { flex-direction: column-reverse; gap: 14px; padding: 0; }
     html.furatic-desktop-panels #auto-queue-toggle strong { writing-mode: horizontal-tb; transform: none; white-space: normal; text-align: center; line-height: 1.2; }
@@ -1606,12 +1606,36 @@
     html.furatic-desktop-panels #auto-queue-preview.is-empty { writing-mode: horizontal-tb; width: 100%; line-height: 1.4; }
     html.furatic-desktop-panels .auto-queue-thumbnail { flex-shrink: 0; }
     html.furatic-desktop-panels .auto-queue-expanded-note { display: none; }
-    html.furatic-desktop-panels #toast-container { padding-left: calc(12px + var(--desktop-side-space, 120px)); transition: padding-left 600ms cubic-bezier(.4,0,.2,1); }
+    html.furatic-desktop-panels #toast-container { padding-left: calc(12px + var(--desktop-side-space, 136px)); transition: padding-left 600ms cubic-bezier(.4,0,.2,1); }
     @media (prefers-reduced-motion: reduce) {
         html.furatic-desktop-panels .furatic-embed-shell, html.furatic-desktop-panels #auto-queue-dock,
         html.furatic-desktop-panels #toast-container, html.furatic-desktop-panels .furatic-queue-drawer { transition: none; }
     }
 
+
+    /* One pre-queue surface expands from the existing preview into its list. */
+    .furatic-embed-shell { position: relative; }
+    html.furatic-desktop-panels #auto-queue-dock { overflow: hidden; }
+    #auto-queue-dock #auto-drawer { position: static; inset: auto; width: 100%; min-height: 0; flex: 1 1 auto;
+        z-index: auto; border: 0; border-radius: 0; box-shadow: none; background: transparent; backdrop-filter: none;
+        clip-path: none; transform: none; transition: none; }
+    #auto-queue-dock #auto-drawer[hidden] { display: none; }
+    html.furatic-desktop-panels #auto-queue-dock.is-expanded #auto-queue-preview { display: none; transform: none; }
+    html.furatic-desktop-panels #auto-queue-dock.is-expanded { width: calc(var(--desktop-side-space, 136px) - 36px); padding: 12px; }
+    html.furatic-desktop-panels #auto-queue-dock.is-expanded #auto-queue-toggle { flex-direction: row; justify-content: space-between; }
+    html.furatic-desktop-panels #auto-queue-dock.is-expanded #auto-queue-toggle strong { text-align: left; }
+    html.furatic-desktop-panels #auto-queue-dock.is-expanded #auto-queue-count { display: inline; padding: 0 0 0 8px; }
+    html.furatic-mobile-compact #content { width: calc(100% / .93); height: calc(100% / .93);
+        transform: scale(.93); transform-origin: top left; }
+    #content { width: 100%; transition: transform 600ms cubic-bezier(.4,0,.2,1), width 600ms cubic-bezier(.4,0,.2,1), height 600ms cubic-bezier(.4,0,.2,1); }
+    @media (max-height: 340px) {
+        html.furatic-mobile-compact .furatic-queue-middle { min-height: 16px; }
+        html.furatic-mobile-compact #current-song { min-height: 96px; padding: 6px 10px !important; gap: 6px !important; grid-template-rows: minmax(38px,auto) auto; }
+        html.furatic-mobile-compact #current-song .current-song-artwork { width: 38px; height: 38px; flex-basis: 38px; }
+        html.furatic-mobile-compact #auto-queue-dock { flex-basis: 60px; min-height: 60px; }
+        html.furatic-mobile-compact .auto-queue-thumbnail { height: 24px; }
+    }
+    @media (prefers-reduced-motion: reduce) { #content { transition: none; } }
 </style>
 
 <div class="furatic-embed-shell">
@@ -1669,20 +1693,19 @@
 
     <div class="furatic-queue-middle">
         <div id="main-queue-scroll" class="furatic-list-scroll"><ul class="list-group" id="song-queue"></ul></div>
-        <section id="auto-drawer" class="furatic-queue-drawer" aria-label="Extended Queue" aria-hidden="true" hidden inert>
-            <div class="furatic-drawer-heading extended-queue-heading"><strong>Extended Queue</strong></div>
-            <p class="furatic-drawer-note">Voting starts after it enters the main queue.</p>
-            <div class="furatic-list-scroll"><ul class="list-group" id="auto-song-queue"></ul><p id="auto-queue-empty" class="furatic-drawer-note">No extra songs waiting.</p></div>
-        </section>
         <section id="history-drawer" class="furatic-queue-drawer" aria-label="Recently played" aria-hidden="true" hidden inert>
             <div class="furatic-drawer-heading"><div><strong>Recently played</strong><small>Last 12 hours · newest first</small></div><button id="history-close" type="button" class="furatic-icon-button" aria-label="Close recently played"><i class="fas fa-times" aria-hidden="true"></i></button></div>
             <div class="furatic-list-scroll"><ul class="list-group" id="history-song-queue"></ul><p id="history-status" class="furatic-drawer-note" role="status"></p><button id="history-more" type="button" class="furatic-list-more" hidden>Show earlier songs</button></div>
         </section>
     </div>
-    <section id="auto-queue-dock" class="list-group-item" aria-label="Extended Queue preview">
-        <button id="auto-queue-toggle" type="button" aria-expanded="false" aria-controls="auto-drawer"><strong><span class="auto-queue-label"><span>Extended</span> <span>Queue</span></span> <span id="auto-queue-count">0</span></strong><i class="fas fa-chevron-up" aria-hidden="true"></i></button>
+    <section id="auto-queue-dock" class="list-group-item" aria-label="pre-queue preview">
+        <button id="auto-queue-toggle" type="button" aria-expanded="false" aria-controls="auto-drawer"><strong><span class="auto-queue-label"><span>pre-queue</span></span> <span id="auto-queue-count">0</span></strong><i class="fas fa-chevron-up" aria-hidden="true"></i></button>
         <div id="auto-queue-preview">No extra songs waiting.</div>
         <p class="auto-queue-expanded-note">Voting starts after it enters the main queue.</p>
+        <section id="auto-drawer" class="furatic-queue-drawer" aria-label="pre-queue" aria-hidden="true" hidden inert>
+            <p class="furatic-drawer-note">Voting starts after it enters the main queue.</p>
+            <div class="furatic-list-scroll"><ul class="list-group" id="auto-song-queue"></ul><p id="auto-queue-empty" class="furatic-drawer-note">No extra songs waiting.</p></div>
+        </section>
     </section>
 
     <div id="furatic-closing-banner" aria-live="polite" aria-hidden="true">
