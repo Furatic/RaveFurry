@@ -72,6 +72,9 @@ function finishPromotion(promotion: ReturnType<typeof capturePromotion>) {
   const to = card.getBoundingClientRect();
   if (!to.width || !to.height) return;
   const timing = {duration: 680, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'both' as FillMode};
+  // Fixed overlays live outside the compact mobile content transform.
+  const scale = document.documentElement.classList.contains('furatic-mobile-compact') ? .93 : 1;
+  const size = (pixels: number) => pixels / scale + 'px';
   const animations: Animation[] = [];
   const visuals: HTMLElement[] = [];
   const mount = (visual: HTMLElement, rect: DOMRect) => {
@@ -82,8 +85,8 @@ function finishPromotion(promotion: ReturnType<typeof capturePromotion>) {
     }
     Object.assign(visual.style, {position: 'fixed', left: rect.left + 'px', top: rect.top + 'px',
       right: 'auto', bottom: 'auto', alignSelf: 'start', justifySelf: 'start',
-      width: rect.width + 'px', height: rect.height + 'px', minWidth: '0', minHeight: '0',
-      maxWidth: 'none', maxHeight: 'none', margin: '0', transform: 'none',
+      width: size(rect.width), height: size(rect.height), minWidth: '0', minHeight: '0',
+      maxWidth: 'none', maxHeight: 'none', margin: '0', transform: scale === 1 ? 'none' : 'scale(' + scale + ')', transformOrigin: 'top left',
       boxSizing: 'border-box', zIndex: '20', pointerEvents: 'none'});
     document.body.appendChild(visual); visuals.push(visual);
   };
@@ -96,9 +99,9 @@ function finishPromotion(promotion: ReturnType<typeof capturePromotion>) {
   mount(shell, to);
   const finalStyle = window.getComputedStyle(card);
   const motion = shell.animate([
-    {...surface, left: from.left + 'px', top: from.top + 'px', width: from.width + 'px', height: from.height + 'px'},
+    {...surface, left: from.left + 'px', top: from.top + 'px', width: size(from.width), height: size(from.height)},
     {backgroundColor: finalStyle.backgroundColor, borderColor: finalStyle.borderColor, borderRadius: finalStyle.borderRadius,
-      left: to.left + 'px', top: to.top + 'px', width: to.width + 'px', height: to.height + 'px'},
+      left: to.left + 'px', top: to.top + 'px', width: size(to.width), height: size(to.height)},
   ], timing);
   animations.push(motion);
   parts.forEach(part => {
@@ -111,10 +114,10 @@ function finishPromotion(promotion: ReturnType<typeof capturePromotion>) {
     const fromStyle = window.getComputedStyle(visual);
     const endStyle = window.getComputedStyle(target);
     animations.push(visual.animate([
-      {left: part.from.left + 'px', top: part.from.top + 'px', width: part.from.width + 'px', height: part.from.height + 'px',
+      {left: part.from.left + 'px', top: part.from.top + 'px', width: size(part.from.width), height: size(part.from.height),
         fontSize: fromStyle.fontSize, lineHeight: fromStyle.lineHeight, color: fromStyle.color, borderRadius: fromStyle.borderRadius,
         padding: fromStyle.padding, fontWeight: fromStyle.fontWeight},
-      {left: end.left + 'px', top: end.top + 'px', width: end.width + 'px', height: end.height + 'px',
+      {left: end.left + 'px', top: end.top + 'px', width: size(end.width), height: size(end.height),
         fontSize: endStyle.fontSize, lineHeight: endStyle.lineHeight, color: endStyle.color, borderRadius: endStyle.borderRadius,
         padding: endStyle.padding, fontWeight: endStyle.fontWeight},
     ], timing));
