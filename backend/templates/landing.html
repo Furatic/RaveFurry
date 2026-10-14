@@ -112,8 +112,8 @@
         position: absolute;
         inset: 0;
         z-index: 1;
-        -webkit-backdrop-filter: blur(24px);
-        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(40px);
+        backdrop-filter: blur(40px);
         background: rgba(3,5,10,0.08);
       }
 
@@ -457,12 +457,13 @@
         padding: 0;
         border: 0 solid transparent;
         display: grid;
-        grid-template-rows: auto minmax(0, 1fr);
+        grid-template-rows: auto auto;
+        align-self: flex-start;
         gap: 14px;
         width: 0;
         min-width: 0;
         max-width: 0;
-        height: min(64.6vh, 748px);
+        height: auto;
         opacity: 0;
         pointer-events: none;
         transform: translate3d(18px, 0, 0) scale(0.985);
@@ -484,7 +485,7 @@
         width: min(100%, 930px);
         min-width: min(100%, 930px);
         max-width: min(100%, 930px);
-        height: min(64.6vh, 748px);
+        height: auto;
         padding: 16px;
         border-width: 1px;
         border-color: rgba(255, 255, 255, 0.10);
@@ -511,7 +512,7 @@
       .tv-video-shell {
         position: relative;
         width: 100%;
-        height: 100%;
+        height: auto;
         min-height: 0;
         border-radius: 24px;
         overflow: hidden;
@@ -686,6 +687,9 @@
           width: min(100%, 620px);
           flex-direction: column;
           gap: 14px;
+          padding-bottom: 46px;
+          transition: width 520ms cubic-bezier(.16,1,.3,1), max-width 520ms cubic-bezier(.16,1,.3,1),
+            padding-bottom 420ms cubic-bezier(.22,1,.36,1);
         }
       
         body.is-ready .player-layout.is-tv-open .player-card {
@@ -693,9 +697,18 @@
         }
       
         .tv-corner-button {
+          top: var(--mobile-queue-height, 620px);
+          translate: 0 8px;
           right: 4px;
-          bottom: 14px;
+          bottom: auto;
           scale: 0.70;
+          transition-property: opacity, transform, filter, background, box-shadow, translate, right;
+          transition-duration: 760ms, 980ms, 980ms, 180ms, 180ms, 420ms, 420ms;
+        }
+
+        .player-layout.is-tv-open { padding-bottom: 0; }
+        .player-layout.is-tv-open .tv-corner-button {
+          transition-duration: 380ms, 980ms, 980ms, 180ms, 180ms, 420ms, 420ms;
         }
       
         .tv-panel {
@@ -721,7 +734,15 @@
       
         .tv-video-shell {
           height: auto;
-          aspect-ratio: 16 / 9;
+          aspect-ratio: auto;
+        }
+      }
+
+      @media (min-width: 800px) and (max-width: 1580px) {
+        .player-layout { padding-bottom: 0; }
+        .tv-corner-button {
+          translate: 0 -60px;
+          right: -63px;
         }
       }
 
@@ -746,7 +767,7 @@
 
         .tv-corner-button {
           right: 12px;
-          bottom: 12px;
+          bottom: auto;
         }
       }
 
@@ -779,7 +800,7 @@
           transition: width 600ms cubic-bezier(.4,0,.2,1), margin-left 600ms cubic-bezier(.4,0,.2,1), height 400ms cubic-bezier(.22,1,.36,1);
         }
         .player-layout .tv-panel {
-          margin-left: 0; min-width: 0; max-width: none; height: var(--queue-height, min(64.6vh, 748px));
+          margin-left: 0; min-width: 0; max-width: none; height: auto;
           transition: flex-basis 520ms cubic-bezier(.22,1,.36,1), width 520ms cubic-bezier(.22,1,.36,1),
             margin-left 520ms cubic-bezier(.22,1,.36,1), padding 520ms cubic-bezier(.22,1,.36,1),
             opacity 320ms cubic-bezier(.22,1,.36,1), transform 620ms cubic-bezier(.22,1,.36,1), height 400ms cubic-bezier(.22,1,.36,1);
@@ -788,7 +809,7 @@
           flex: 0 0 calc((100% - var(--desktop-side-space, 120px) - 14px) * .6);
           width: calc((100% - var(--desktop-side-space, 120px) - 14px) * .6);
           min-width: 0; max-width: none; margin-left: 14px;
-          height: var(--queue-height, min(64.6vh, 748px));
+          height: auto;
         }
       }
       #tv-close { width: 46px; padding: 0; }
@@ -1240,6 +1261,9 @@
           playerLayout.style.setProperty("--desktop-side-space", space + "px");
           queuePanels()?.setSpace(space);
         }
+        function syncTvAnchor() {
+          if (!desktopQuery.matches) playerLayout.style.setProperty("--mobile-queue-height", document.getElementById("player-card").offsetHeight + "px");
+        }
         function syncHeight() {
           const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
           const top = document.getElementById("player-card").getBoundingClientRect().top;
@@ -1249,6 +1273,7 @@
           playerLayout.style.setProperty("--queue-height", height + "px");
           frame.style.height = height + "px";
           frame.style.maxHeight = "none";
+          syncTvAnchor();
           queuePanels()?.setVisibleHeight?.(visibleHeight);
         }
         function syncLayout() {
@@ -1272,7 +1297,10 @@
         frame.addEventListener("load", syncLayout);
         window.addEventListener("resize", syncLayout, {passive: true});
         window.visualViewport?.addEventListener("resize", syncHeight, {passive: true});
-        if (window.ResizeObserver) new ResizeObserver(syncHeight).observe(document.querySelector(".brand"));
+        if (window.ResizeObserver) {
+          new ResizeObserver(syncHeight).observe(document.querySelector(".brand"));
+          new ResizeObserver(syncTvAnchor).observe(document.getElementById("player-card"));
+        }
         syncLayout();
         window.setTimeout(syncHeight, 1200);
 
