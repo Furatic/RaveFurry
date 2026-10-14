@@ -3,10 +3,81 @@ import {getStoredVote, paintVotes} from './vote-state';
 import {initPanels, updateAutoPreview, refreshOpenHistory} from './panels';
 import {showPlayButton, showPauseButton} from './buttons';
 import {syncAudioStream} from './audio';
+import {displayArtist} from './display-name';
 
 export let state = null;
 const rowAnimations = new Map<HTMLElement, Animation>();
 let lastStateReceivedAt = 0;
+let promotingOccurrence: string | null = null;
+let currentPromotion: Animation | null = null;
+let restorePromotionLayer: (() => void) | null = null;
+
+function capturePromotion(newSong, oldState) {
+  if (!newSong || !oldState || oldState.currentSong?.occurrenceId === newSong.occurrenceId ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches) return null;
+  const row = Array.from(document.querySelectorAll<HTMLElement>('#song-queue > li'))
+      .find(node => node.dataset.occurrenceId === String(newSong.occurrenceId));
+  const card = document.getElementById('current-song');
+  const scroll = document.getElementById('main-queue-scroll');
+  if (!row || !card || typeof card.animate !== 'function' || scroll?.hasAttribute('inert')) return null;
+  const from = row.getBoundingClientRect();
+  const viewport = (scroll || row.parentElement).getBoundingClientRect();
+  if (!from.height || from.bottom <= viewport.top || from.top >= viewport.bottom) return null;
+  if (currentPromotion) {
+    currentPromotion.cancel(); currentPromotion = null;
+    restorePromotionLayer?.(); restorePromotionLayer = null;
+  }
+  const ghost = oldState.currentSong ? card.cloneNode(true) as HTMLElement : null;
+  const oldRect = card.getBoundingClientRect();
+  if (ghost) {
+    const originals = [card, ...Array.from(card.querySelectorAll<HTMLElement>('*'))];
+    const copies = [ghost, ...Array.from(ghost.querySelectorAll<HTMLElement>('*'))];
+    originals.forEach((node, index) => {
+      const style = window.getComputedStyle(node);
+      // The departing card has no IDs; preserve its measured appearance during the crossfade.
+      for (const property of Array.from(style)) copies[index].style.setProperty(property, style.getPropertyValue(property));
+    });
+    ghost.removeAttribute('id');
+    ghost.removeAttribute('data-occurrence-id'); ghost.removeAttribute('data-queue-key');
+    ghost.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'));
+    ghost.setAttribute('inert', ''); ghost.setAttribute('aria-hidden', 'true');
+    Object.assign(ghost.style, {position: 'fixed', left: oldRect.left + 'px', top: oldRect.top + 'px',
+      width: oldRect.width + 'px', height: oldRect.height + 'px', margin: '0', zIndex: '19', pointerEvents: 'none'});
+  }
+  return {from, ghost, card, occurrence: String(newSong.occurrenceId)};
+}
+
+function finishPromotion(promotion) {
+  if (!promotion) return;
+  const {from, ghost, card} = promotion;
+  const to = card.getBoundingClientRect();
+  if (!to.width || !to.height) return;
+  if (ghost) {
+    document.body.appendChild(ghost);
+    const fade = ghost.animate([{opacity: 1}, {opacity: 0}], {duration: 260, easing: 'ease-out', fill: 'both'});
+    fade.finished.catch(() => undefined).then(() => { fade.cancel(); ghost.remove(); });
+  }
+  const motion = card.animate([
+    {transformOrigin: 'top left', transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})`},
+    {transformOrigin: 'top left', transform: 'translate(0, 0) scale(1, 1)'},
+  ], {duration: 560, easing: 'cubic-bezier(.22,1,.36,1)'});
+  const previousZ = card.style.zIndex;
+  const layer = card.parentElement;
+  const previousLayerZ = layer.style.zIndex;
+  const previousPosition = layer.style.position;
+  card.style.zIndex = '20';
+  layer.style.position = 'relative'; layer.style.zIndex = '20';
+  restorePromotionLayer = () => {
+    card.style.zIndex = previousZ;
+    layer.style.zIndex = previousLayerZ; layer.style.position = previousPosition;
+  };
+  currentPromotion = motion;
+  motion.finished.catch(() => undefined).then(() => {
+    if (currentPromotion === motion) {
+      currentPromotion = null; restorePromotionLayer?.(); restorePromotionLayer = null; motion.cancel();
+    }
+  });
+}
 
 function formatSeconds(totalSeconds) {
   totalSeconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
@@ -100,6 +171,8 @@ export function updateState(newState) {
   }
 
   const currentSong = newState.musiq.currentSong;
+  const promotion = capturePromotion(currentSong, oldState);
+  promotingOccurrence = promotion?.occurrence || null;
   if (currentSong == null) {
     state = newState.musiq;
     $('#current-song-title').empty();
@@ -300,6 +373,8 @@ export function updateState(newState) {
   // don't start a new animation when an old one is still in progress
   // the running animation will end in the (then) current state
   applyQueueChange(oldState, state);
+  promotingOccurrence = null;
+  finishPromotion(promotion);
   syncClosingBanner(state);
 
   paintVotes();
@@ -320,11 +395,12 @@ function safeExternalUrl(url): string | undefined {
 }
 
 function insertDisplayName(element, song) {
-  if (song.artist == null || song.artist == '') {
+  const artist = displayArtist(song.artist, song.title);
+  if (!artist) {
     element.text(song.title);
   } else {
     element.empty();
-    element.append($('<strong/>').text(song.artist));
+    element.append($('<strong/>').text(artist));
     element.append($('<span/>').addClass('queue-song-title-text').text(' – ' + song.title));
   }
 }
@@ -623,7 +699,7 @@ export function reconcileList(selector: string, songs: any[], animate = true, hi
     }
     targets.push(row);
   }
-  existing.forEach((row, key) => { if (!keep.has(key)) animateExit(list, row, animate); });
+  existing.forEach((row, key) => { if (!keep.has(key)) animateExit(list, row, animate && key !== promotingOccurrence); });
   if (!animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   targets.forEach(row => {
     const previous = before.get(row.dataset.occurrenceId);
