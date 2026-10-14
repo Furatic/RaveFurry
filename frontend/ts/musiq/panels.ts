@@ -83,11 +83,66 @@ function parentPanels() {
   try { return window.parent !== window ? (window.parent as any).furaticPlayerPanels : null; } catch (_error) { return null; }
 }
 
+type PreQueueStart = {bounds: DOMRect, preview: DOMRect, labels: {node: HTMLElement, bounds: DOMRect, transform: string}[]};
+
+function capturePreQueue(): PreQueueStart {
+  const dock = document.getElementById('auto-queue-dock');
+  const preview = document.getElementById('auto-queue-preview');
+  return {bounds: dock.getBoundingClientRect(), preview: preview.getBoundingClientRect(),
+    labels: Array.from(dock.querySelectorAll<HTMLElement>('#auto-queue-toggle > strong, #auto-queue-toggle > i'))
+        .map(node => ({node, bounds: node.getBoundingClientRect(), transform: window.getComputedStyle(node).transform}))};
+}
+
+async function morphPreQueue(start: PreQueueStart, opening: boolean, reduced: boolean): Promise<void> {
+  const dock = document.getElementById('auto-queue-dock');
+  const preview = document.getElementById('auto-queue-preview');
+  const content = document.getElementById('auto-drawer');
+  const savedTransition = dock.style.transition;
+  dock.style.transition = 'none';
+  const end = dock.getBoundingClientRect();
+  const timing = {duration: 600, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'both' as FillMode};
+  const animations: Animation[] = [];
+  const savedPreviewStyle = preview.getAttribute('style');
+  if (!reduced && typeof dock.animate === 'function') {
+    // Animate the existing surface's width; its text and artwork never stretch.
+    animations.push(dock.animate([{width: start.bounds.width + 'px'}, {width: end.width + 'px'}], timing));
+    const previewBounds = opening ? start.preview : preview.getBoundingClientRect();
+    if (opening && previewBounds.width) {
+      Object.assign(preview.style, {position: 'absolute', display: 'grid', left: previewBounds.left - start.bounds.left + 'px',
+        top: previewBounds.top - start.bounds.top + 'px', width: previewBounds.width + 'px', height: previewBounds.height + 'px'});
+    } else preview.style.display = 'grid';
+    animations.push(preview.animate(opening ?
+      [{opacity: 1}, {opacity: 0, offset: .35}, {opacity: 0}] :
+      [{opacity: 0}, {opacity: 0, offset: .4}, {opacity: 1}], timing));
+    animations.push(content.animate(opening ?
+      [{opacity: 0}, {opacity: 0, offset: .2}, {opacity: 1}] :
+      [{opacity: 1}, {opacity: 0, offset: .6}, {opacity: 0}], timing));
+    start.labels.forEach(({node, bounds, transform}) => {
+      const destination = node.getBoundingClientRect();
+      const finalTransform = window.getComputedStyle(node).transform;
+      animations.push(node.animate([
+        {transform: 'translate(' + (bounds.left - destination.left) + 'px,' + (bounds.top - destination.top) + 'px) ' + (transform === 'none' ? '' : transform)},
+        {transform: finalTransform}
+      ], timing));
+    });
+  }
+  const resize = () => animations.forEach(animation => animation.cancel());
+  window.addEventListener('resize', resize, {once: true});
+  await Promise.all(animations.map(animation => animation.finished.catch(() => undefined)));
+  window.removeEventListener('resize', resize);
+  animations.forEach(animation => animation.cancel());
+  dock.style.transition = savedTransition;
+  if (savedPreviewStyle === null) preview.removeAttribute('style'); else preview.setAttribute('style', savedPreviewStyle);
+  if (!opening) content.hidden = true;
+}
+
+
 async function transition(panel: Panel, opening: boolean): Promise<void> {
   const element = document.getElementById(panel + '-drawer');
   if (!element) return;
   if (opening && desktopLayout()) await parentPanels()?.beforeDrawer();
   const desktop = desktopLayout();
+  const preQueueStart = panel === 'auto' && desktop ? capturePreQueue() : null;
   if (desktop) parentPanels()?.setDrawer(opening ? panel : null);
   const historyButton = document.getElementById('queue-history-button');
   const autoButton = document.getElementById('auto-queue-toggle');
@@ -106,6 +161,10 @@ async function transition(panel: Panel, opening: boolean): Promise<void> {
   if (opening) element.classList.add('is-open'); else element.classList.remove('is-open');
   if (opening && panel === 'history' && Date.now() - historyLoadedAt > 10000) loadHistory();
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (preQueueStart) {
+    await morphPreQueue(preQueueStart, opening, reduced);
+    return;
+  }
   if (reduced || typeof element.animate !== 'function') {
     if (!opening) element.hidden = true;
     return;
@@ -131,6 +190,10 @@ export function initPanels(renderer: (songs: any[]) => void) {
     current: () => controller.active && document.getElementById(controller.active + '-drawer').classList.contains('is-open') ? controller.active : null,
     setDesktop: (desktop: boolean) => {
       document.documentElement.classList.toggle('furatic-desktop-panels', desktop);
+      document.documentElement.classList.toggle('furatic-mobile-compact', !desktop);
+      const autoDrawer = document.getElementById('auto-drawer');
+      const home = document.querySelector(desktop ? '#auto-queue-dock' : '.furatic-queue-middle');
+      if (autoDrawer.parentElement !== home) home.insertBefore(autoDrawer, desktop ? null : document.getElementById('history-drawer'));
       document.getElementById('main-queue-scroll').toggleAttribute('inert', !desktop && Boolean(controller.active));
       parentPanels()?.setDrawer((window as any).furaticQueuePanels.current());
     },
