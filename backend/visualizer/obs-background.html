@@ -1109,6 +1109,25 @@ canvas{display:block;width:100%;height:100%}
     motion.set([Math.sin(flowClock*.019),Math.cos(flowClock*.013),Math.sin(flowClock*.011),Math.cos(flowClock*.017)]);
     if(socket&&now-Math.max(lastReceived,connectionOpened)>3){socket.close();}
   }
+  // Publish uniforms, not pixels or PCM: website and OBS share one live scene.
+  let sceneSocket=null,sceneRetry=0,lastScenePublish=0;
+  function connectScene(){
+    if(stopped||!visible||simulated||sceneSocket)return;
+    try{sceneSocket=new WebSocket(`ws://127.0.0.1:${port}/scene`);}
+    catch(_error){sceneRetry=setTimeout(connectScene,1500);return;}
+    const connection=sceneSocket;
+    connection.onerror=()=>{};
+    connection.onclose=()=>{if(sceneSocket!==connection)return;sceneSocket=null;if(!stopped&&visible)sceneRetry=setTimeout(connectScene,1500);};
+  }
+  function publishScene(timestamp){
+    if(!sceneSocket||sceneSocket.readyState!==1||sceneSocket.bufferedAmount>16384||timestamp-lastScenePublish<1000/60-.1)return;
+    lastScenePublish=timestamp;
+    const values={motion,clouds,material,dance,thumps,bass:bassVisual,music:renderMusic,energy:renderEnergy,sizes:renderSizes,
+      bands:renderBands,lights:lightEnergy,edgeEnergy,edgeLights,edgeMusic,edgeBands};
+    const frame={};for(const key in values)frame[key]=Array.from(values[key],value=>Math.round(value*1000000)/1000000);
+    try{sceneSocket.send(JSON.stringify(frame));}catch(_error){sceneSocket.close();}
+  }
+  function stopScene(){clearTimeout(sceneRetry);sceneRetry=0;if(sceneSocket){sceneSocket.onclose=null;sceneSocket.close();sceneSocket=null;}}
   function render(){
     gl.useProgram(programs[0]);gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,w,h);
     gl.uniform2f(loc.res,w,h);gl.uniform4fv(loc.motion,motion);gl.uniform4fv(loc.clouds,clouds);gl.uniform4fv(loc.material,material);gl.uniform4fv(loc.dance,dance);gl.uniform4fv(loc.thumps,thumps);gl.uniform2f(loc.bass,clamp(bassVisual[0]),clamp(bassVisual[1]));gl.uniform4fv(loc.music,renderMusic);gl.uniform4fv(loc.energy,renderEnergy);gl.uniform4fv(loc.sizes,renderSizes);gl.uniform1fv(loc.bands,renderBands);gl.uniform4fv(loc.lights,lightEnergy);
@@ -1125,7 +1144,7 @@ canvas{display:block;width:100%;height:100%}
       update(dt,now);
       if(timestamp+.1>=nextRender){
         if(gpuReady()){
-          if(resizePending)resize();render();
+          if(resizePending)resize();render();publishScene(timestamp);
           // Phase-based pacing also gives 60 FPS on 120/144 Hz browser callbacks.
           nextRender=Math.max(nextRender,timestamp-1000/60)+1000/60;
         }else gpuSkipped++;
@@ -1138,17 +1157,18 @@ canvas{display:block;width:100%;height:100%}
     if(showing===visible||stopped)return;visible=showing;
     cancelAnimationFrame(raf);raf=0;lastFrame=0;nextRender=0;
     if(!visible){
+      stopScene();
       clearTimeout(reconnectTimer);reconnectTimer=0;
       if(socket){socket.onclose=null;socket.onmessage=null;socket.close();socket=null;}
       lastIds=null;lastCloudIds=null;lastReceived=-Infinity;amplitudeReady=false;
       clearContext();
       clearHitTiming();thumpTargets.fill(0);thumps.fill(0);thumpVelocity.fill(0);bassVisual.fill(0);bassVisualVelocity.fill(0);
       for(const light of lights)light.strength=0;
-    }else if(!lost){resizePending=true;if(!simulated)connect();raf=requestAnimationFrame(frame);}
+    }else if(!lost){resizePending=true;if(!simulated){connect();connectScene();}raf=requestAnimationFrame(frame);}
   }
   function obsVisibility(event){if(typeof event.detail?.visible==='boolean'){obsVisible=event.detail.visible;setVisibility();}}
   function cleanup(){
-    if(stopped)return;stopped=true;cancelAnimationFrame(raf);clearTimeout(reconnectTimer);if(observer)observer.disconnect();window.removeEventListener('pagehide',cleanup);
+    if(stopped)return;stopped=true;stopScene();cancelAnimationFrame(raf);clearTimeout(reconnectTimer);if(observer)observer.disconnect();window.removeEventListener('pagehide',cleanup);
     window.removeEventListener('obsSourceVisibleChanged',obsVisibility);document.removeEventListener('visibilitychange',setVisibility);
     if(socket){socket.onclose=null;socket.onmessage=null;socket.close();socket=null;}
     if(!lost){freeGPU();const release=gl.getExtension('WEBGL_lose_context');if(release)release.loseContext();}
@@ -1160,7 +1180,7 @@ canvas{display:block;width:100%;height:100%}
   canvas.addEventListener('webglcontextrestored',()=>{if(stopped||!lost)return;try{initialize();lost=false;lastFrame=0;nextRender=0;report('Graphics recovered');if(visible)raf=requestAnimationFrame(frame);}catch(error){freeGPU();lost=false;report('Graphics recovery failed',true);cleanup();}});
   window.addEventListener('pagehide',cleanup,{once:true});
   window.addEventListener('obsSourceVisibleChanged',obsVisibility);document.addEventListener('visibilitychange',setVisibility);
-  if(visible){if(!simulated)connect();raf=requestAnimationFrame(frame);}
+  if(visible){if(!simulated){connect();connectScene();}raf=requestAnimationFrame(frame);}
 })();
 </script>
 </body>
