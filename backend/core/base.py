@@ -1,5 +1,6 @@
 """This module provides common functionality for all pages on the site."""
 
+import datetime
 import logging
 import os
 import random
@@ -13,6 +14,7 @@ from django.http.response import HttpResponse, JsonResponse
 from django.views.decorators.http import require_POST
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils import timezone
 
 from django.conf import settings as conf
 from core import audit_log, models, redis, site_mode, user_manager
@@ -181,11 +183,55 @@ def landing(request: WSGIRequest) -> HttpResponse:
     )
 
 
+def _afterhours_top_songs() -> list:
+    """Rank unique songs by their accumulated playback scores in the last 12 hours."""
+    now = timezone.now()
+    cutoff = now - datetime.timedelta(hours=12)
+    fields = ("occurrence_id", "external_url", "artist", "title", "artwork_url", "votes")
+    history = list(models.PlaybackHistory.objects.filter(
+        ended_at__gte=cutoff, ended_at__lte=now,
+    ).order_by("-ended_at", "-id").values(*fields))
+    # After-hours pauses the last track instead of retiring it into history.
+    current = models.CurrentSong.objects.filter(
+        playback_started_at__gte=cutoff, playback_started_at__lte=now,
+    ).exclude(occurrence_id__in=[row["occurrence_id"] for row in history]).values(*fields)
+    songs = {}
+    for row in list(current) + history:
+        key = row["external_url"] or (row["artist"], row["title"])
+        if key not in songs:
+            songs[key] = {
+                "title": row["title"] or "Untitled song",
+                "artist": row["artist"] or "Unknown artist",
+                "artworkUrl": row["artwork_url"],
+                "votes": 0,
+            }
+        songs[key]["votes"] += int(row["votes"] or 0)
+    return sorted(songs.values(), key=lambda song: (
+        -song["votes"], song["title"].casefold(), song["artist"].casefold(),
+    ))[:20]
+
+
 def afterhours(_request: WSGIRequest) -> HttpResponse:
     """Renders the FURATIC After Hours page."""
+    page_context = _furatic_public_context()
+    try:
+        page_context["afterhours_top_songs"] = _afterhours_top_songs()
+    except DatabaseError:
+        logger.exception("could not read after-hours top songs")
+        page_context["afterhours_top_songs_unavailable"] = True
     return _disable_dynamic_page_cache(
-        render(_request, "landing_afterhours.html", _furatic_public_context())
+        render(_request, "landing_afterhours.html", page_context)
     )
+
+
+def afterhours_top_songs(_request: WSGIRequest) -> HttpResponse:
+    """Refresh the after-hours chart without reloading the landing page."""
+    try:
+        response = JsonResponse({"songs": _afterhours_top_songs()})
+    except DatabaseError:
+        logger.exception("could not refresh after-hours top songs")
+        response = JsonResponse({"message": "Top songs are temporarily unavailable."}, status=503)
+    return _disable_dynamic_page_cache(response)
 
 
 def site_mode_status(_request: WSGIRequest) -> HttpResponse:
