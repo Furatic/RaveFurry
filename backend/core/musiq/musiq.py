@@ -202,8 +202,10 @@ def try_providers(
             )
             # the current provider could provide the song, don't try the other ones
             break
-        except ProviderError:
+        except ProviderError as error:
             # this provider cannot provide this song, use the next provider
+            if not provider.error:
+                provider.error = str(error)
             # if this was the last provider, show its error
             # in new music only mode, do not allow fallbacks
             if storage.get("new_music_only") or provider == last_provider:
@@ -340,6 +342,16 @@ def request_music(request: WSGIRequest) -> HttpResponse:
         # threads must never be asked to use an uncommitted queue row.
         from core import queue_lock
         queue_lock.acquire()
+        if not site_mode.accepts_song_requests():
+            try:
+                queue.remove(queued_song.id)
+            except QueuedSong.DoesNotExist:
+                pass
+            transaction.on_commit(playback.queue_changed.set)
+            return HttpResponseBadRequest(
+                "Closing time: we are no longer accepting new songs. Thanks for coming!"
+                if site_mode.is_closing() else "FURATIC is currently in After Hours mode."
+            )
         from core.models import ClientIdentity  # pylint: disable=import-outside-toplevel
 
         ClientIdentity.objects.select_for_update().get(pk=identity.pk)
