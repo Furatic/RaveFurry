@@ -12,9 +12,31 @@ let promotingOccurrence: string | null = null;
 let currentPromotion: Animation | null = null;
 let restorePromotionLayer: (() => void) | null = null;
 
+/** Freeze a visual without retaining IDs or live controls. */
+function promotionSnapshot(element: HTMLElement): HTMLElement {
+  const copy = element.cloneNode(true) as HTMLElement;
+  const originals = [element, ...Array.from(element.querySelectorAll<HTMLElement>('*'))];
+  const copies = [copy, ...Array.from(copy.querySelectorAll<HTMLElement>('*'))];
+  originals.forEach((node, index) => {
+    const style = window.getComputedStyle(node);
+    for (const property of Array.from(style)) copies[index].style.setProperty(property, style.getPropertyValue(property));
+    copies[index].removeAttribute('id');
+    copies[index].removeAttribute('data-occurrence-id');
+    copies[index].removeAttribute('data-queue-key');
+    copies[index].style.transition = 'none';
+    copies[index].style.animation = 'none';
+  });
+  copy.setAttribute('inert', ''); copy.setAttribute('aria-hidden', 'true');
+  return copy;
+}
+
 function capturePromotion(newSong, oldState) {
-  if (!newSong || !oldState || oldState.currentSong?.occurrenceId === newSong.occurrenceId ||
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches) return null;
+  if (!oldState || oldState.currentSong?.occurrenceId === newSong?.occurrenceId) return null;
+  if (currentPromotion) {
+    currentPromotion.cancel(); currentPromotion = null;
+    restorePromotionLayer?.(); restorePromotionLayer = null;
+  }
+  if (!newSong || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return null;
   const row = Array.from(document.querySelectorAll<HTMLElement>('#song-queue > li'))
       .find(node => node.dataset.occurrenceId === String(newSong.occurrenceId));
   const card = document.getElementById('current-song');
@@ -23,61 +45,114 @@ function capturePromotion(newSong, oldState) {
   const from = row.getBoundingClientRect();
   const viewport = (scroll || row.parentElement).getBoundingClientRect();
   if (!from.height || from.bottom <= viewport.top || from.top >= viewport.bottom) return null;
-  if (currentPromotion) {
-    currentPromotion.cancel(); currentPromotion = null;
-    restorePromotionLayer?.(); restorePromotionLayer = null;
-  }
-  const ghost = oldState.currentSong ? card.cloneNode(true) as HTMLElement : null;
   const oldRect = card.getBoundingClientRect();
-  if (ghost) {
-    const originals = [card, ...Array.from(card.querySelectorAll<HTMLElement>('*'))];
-    const copies = [ghost, ...Array.from(ghost.querySelectorAll<HTMLElement>('*'))];
-    originals.forEach((node, index) => {
-      const style = window.getComputedStyle(node);
-      // The departing card has no IDs; preserve its measured appearance during the crossfade.
-      for (const property of Array.from(style)) copies[index].style.setProperty(property, style.getPropertyValue(property));
-    });
-    ghost.removeAttribute('id');
-    ghost.removeAttribute('data-occurrence-id'); ghost.removeAttribute('data-queue-key');
-    ghost.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'));
-    ghost.setAttribute('inert', ''); ghost.setAttribute('aria-hidden', 'true');
-    Object.assign(ghost.style, {position: 'fixed', left: oldRect.left + 'px', top: oldRect.top + 'px',
-      width: oldRect.width + 'px', height: oldRect.height + 'px', margin: '0', zIndex: '19', pointerEvents: 'none'});
-  }
-  return {from, ghost, card, occurrence: String(newSong.occurrenceId)};
+  const ghost = oldState.currentSong ? promotionSnapshot(card) : null;
+  const style = window.getComputedStyle(row);
+  const surface = {backgroundColor: style.backgroundColor, borderColor: style.borderColor, borderRadius: style.borderRadius};
+  // Measure shared elements before their queue row is removed. Independent
+  // rectangles let the card change shape without stretching its text.
+  const parts = [
+    ['.queue-artwork', '#current-song-artwork'],
+    ['.queue-title', '#current-song-title'],
+    ['.vote-up', '#current-song-vote-up'],
+    ['.queue-vote-count', '#current-song-votes'],
+    ['.vote-down', '#current-song-vote-down'],
+    ['.queue-info-time', '#current-song-time-total'],
+  ].map(([source, target]) => {
+    const node = row.querySelector<HTMLElement>(source);
+    if (!node || !node.getBoundingClientRect().width) return null;
+    return {visual: promotionSnapshot(node), from: node.getBoundingClientRect(), target};
+  }).filter(Boolean);
+  return {from, surface, parts, ghost, oldRect, card, occurrence: String(newSong.occurrenceId)};
 }
 
-function finishPromotion(promotion) {
+function finishPromotion(promotion: ReturnType<typeof capturePromotion>) {
   if (!promotion) return;
-  const {from, ghost, card} = promotion;
+  const {from, surface, parts, ghost, oldRect, card} = promotion;
   const to = card.getBoundingClientRect();
   if (!to.width || !to.height) return;
+  const timing = {duration: 680, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'both' as FillMode};
+  const animations: Animation[] = [];
+  const visuals: HTMLElement[] = [];
+  const mount = (visual: HTMLElement, rect: DOMRect) => {
+    Object.assign(visual.style, {position: 'fixed', left: rect.left + 'px', top: rect.top + 'px',
+      width: rect.width + 'px', height: rect.height + 'px', minWidth: '0', minHeight: '0',
+      maxWidth: 'none', maxHeight: 'none', margin: '0', transform: 'none',
+      boxSizing: 'border-box', zIndex: '20', pointerEvents: 'none'});
+    document.body.appendChild(visual); visuals.push(visual);
+  };
   if (ghost) {
-    document.body.appendChild(ghost);
-    const fade = ghost.animate([{opacity: 1}, {opacity: 0}], {duration: 260, easing: 'ease-out', fill: 'both'});
-    fade.finished.catch(() => undefined).then(() => { fade.cancel(); ghost.remove(); });
+    mount(ghost, oldRect); ghost.style.zIndex = '19';
+    animations.push(ghost.animate([{opacity: 1}, {opacity: 0}], {...timing, duration: 360}));
   }
-  const motion = card.animate([
-    {transformOrigin: 'top left', transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})`},
-    {transformOrigin: 'top left', transform: 'translate(0, 0) scale(1, 1)'},
-  ], {duration: 560, easing: 'cubic-bezier(.22,1,.36,1)'});
-  const previousZ = card.style.zIndex;
-  const layer = card.parentElement;
-  const previousLayerZ = layer.style.zIndex;
-  const previousPosition = layer.style.position;
-  card.style.zIndex = '20';
-  layer.style.position = 'relative'; layer.style.zIndex = '20';
+  const shell = promotionSnapshot(card);
+  shell.replaceChildren();
+  mount(shell, to);
+  const finalStyle = window.getComputedStyle(card);
+  const motion = shell.animate([
+    {...surface, left: from.left + 'px', top: from.top + 'px', width: from.width + 'px', height: from.height + 'px'},
+    {backgroundColor: finalStyle.backgroundColor, borderColor: finalStyle.borderColor, borderRadius: finalStyle.borderRadius,
+      left: to.left + 'px', top: to.top + 'px', width: to.width + 'px', height: to.height + 'px'},
+  ], timing);
+  animations.push(motion);
+  parts.forEach(part => {
+    const target = card.querySelector<HTMLElement>(part.target);
+    if (!target || !target.getBoundingClientRect().width) return;
+    const end = target.getBoundingClientRect();
+    const visual = part.visual;
+    mount(visual, part.from);
+    visual.style.zIndex = '21';
+    const fromStyle = window.getComputedStyle(visual);
+    const endStyle = window.getComputedStyle(target);
+    animations.push(visual.animate([
+      {left: part.from.left + 'px', top: part.from.top + 'px', width: part.from.width + 'px', height: part.from.height + 'px',
+        fontSize: fromStyle.fontSize, lineHeight: fromStyle.lineHeight, color: fromStyle.color, borderRadius: fromStyle.borderRadius,
+        padding: fromStyle.padding, fontWeight: fromStyle.fontWeight},
+      {left: end.left + 'px', top: end.top + 'px', width: end.width + 'px', height: end.height + 'px',
+        fontSize: endStyle.fontSize, lineHeight: endStyle.lineHeight, color: endStyle.color, borderRadius: endStyle.borderRadius,
+        padding: endStyle.padding, fontWeight: endStyle.fontWeight},
+    ], timing));
+    const children = Array.from(visual.querySelectorAll<HTMLElement>('*'));
+    const targets = Array.from(target.querySelectorAll<HTMLElement>('*'));
+    children.forEach((child, index) => {
+      if (!targets[index]) return;
+      const start = window.getComputedStyle(child);
+      const end = window.getComputedStyle(targets[index]);
+      animations.push(child.animate([{fontSize: start.fontSize, lineHeight: start.lineHeight, transform: start.transform},
+        {fontSize: end.fontSize, lineHeight: end.lineHeight, transform: end.transform}], timing));
+    });
+  });
+  // Reveal the new playback details as the shared elements reach their slots.
+  card.querySelectorAll<HTMLElement>('#progress-bar-container, #stream-control, .current-song-vote-indicators').forEach(element => {
+    const details = promotionSnapshot(element);
+    const total = details.querySelector<HTMLElement>('.current-song-time-row > :last-child');
+    if (total && parts.some(part => part.target === '#current-song-time-total')) total.style.visibility = 'hidden';
+    mount(details, element.getBoundingClientRect()); details.style.zIndex = '21';
+    animations.push(details.animate([{opacity: 0, offset: 0}, {opacity: 0, offset: .35}, {opacity: 1}], timing));
+  });
+  const previousOpacity = card.style.opacity;
+  const previousPriority = card.style.getPropertyPriority('opacity');
+  card.style.setProperty('opacity', '0', 'important');
   restorePromotionLayer = () => {
-    card.style.zIndex = previousZ;
-    layer.style.zIndex = previousLayerZ; layer.style.position = previousPosition;
+    card.style.setProperty('opacity', previousOpacity, previousPriority);
+    window.removeEventListener('resize', cancelPromotion);
+    animations.forEach(animation => animation.cancel());
+    visuals.forEach(visual => visual.remove());
   };
   currentPromotion = motion;
-  motion.finished.catch(() => undefined).then(() => {
+  const cancelPromotion = () => {
     if (currentPromotion === motion) {
-      currentPromotion = null; restorePromotionLayer?.(); restorePromotionLayer = null; motion.cancel();
+      currentPromotion = null; restorePromotionLayer?.(); restorePromotionLayer = null;
+    }
+  };
+  window.addEventListener('resize', cancelPromotion, {once: true});
+  Promise.all(animations.map(animation => animation.finished.catch(() => undefined))).then(() => {
+    if (currentPromotion === motion) {
+      currentPromotion = null; restorePromotionLayer?.(); restorePromotionLayer = null;
     }
   });
 }
+
 
 function formatSeconds(totalSeconds) {
   totalSeconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
