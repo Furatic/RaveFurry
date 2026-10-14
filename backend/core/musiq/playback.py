@@ -16,7 +16,7 @@ from django.db import connection, transaction
 from django.db.models import Case, F, IntegerField, Value, When
 from django.utils import timezone
 
-from core import models, obs_export, redis, user_manager, playback_state_backup
+from core import models, obs_export, redis, user_manager, playback_state_backup, site_mode
 from core.lights import controller as lights_controller
 from core.musiq import audio_tail, musiq, next_up, player
 from core.settings import storage
@@ -172,6 +172,8 @@ class Playback:
             return command
 
         if command == "resume_from_afterhours":
+            if site_mode.is_afterhours():
+                return command  # Closing may already have drained before this command arrived.
             if models.CurrentSong.objects.exists() and redis.get("paused"):
                 musiq.controller._resume()
                 musiq.update_state()
@@ -209,6 +211,27 @@ class Playback:
             return command
 
         return ""
+
+    def _finish_closing_if_drained(self) -> bool:
+        """Enter after-hours only after the last main-queue occurrence is gone."""
+        if not site_mode.is_closing():
+            return False
+        from core import audit_log, queue_lock
+        with transaction.atomic():
+            queue_lock.acquire()
+            # Recheck under the same lock used by submissions and moderator mode changes.
+            if (not site_mode.is_closing() or models.CurrentSong.objects.exists()
+                    or queue.filter(priority_tier="normal").exists()):
+                return False
+            storage.put("paused", True)
+            redis.put("paused", True)
+            redis.put("playing", False)
+            redis.put("backup_playing", False)
+            site_mode.set_mode(site_mode.AFTER_HOURS_MODE)
+        audit_log.append("closing_queue_finished", target=site_mode.AFTER_HOURS_MODE)
+        musiq.update_state()
+        playback_state_backup.snapshot()
+        return True
     
     def play_alarm(self, interrupt=False, from_buzzer=True) -> None:
         """Play the alarm sound. If specified, interrupts the currently playing song."""
@@ -254,6 +277,8 @@ class Playback:
         if models.CurrentSong.objects.exists():
             # recover interrupted song from database
             return models.CurrentSong.objects.get(), True
+
+        self._finish_closing_if_drained()
 
         if queue.count() == 0:
             queue_changed.wait()
@@ -536,20 +561,30 @@ class Playback:
         models.RecentPlay.objects.filter(
             created__lt=timezone.now() - datetime.timedelta(hours=24),
         ).delete()
-        if storage.get("repeat"):
-            queue.enqueue(
-                {
-                    "artist": current_song.artist,
-                    "title": current_song.title,
-                    "duration": current_song.duration,
-                    "internal_url": current_song.internal_url,
-                    "external_url": current_song.external_url,
-                    "stream_url": current_song.stream_url,
-                },
-                False,
-                enqueue_first=False,
-            )
-            queue_changed.set()
+        if self._finish_closing_if_drained():
+            return
+        if storage.get("repeat") and site_mode.accepts_song_requests():
+            from core.musiq.music_provider import ProviderError
+            try:
+                queue.enqueue(
+                    {
+                        "artist": current_song.artist,
+                        "title": current_song.title,
+                        "duration": current_song.duration,
+                        "internal_url": current_song.internal_url,
+                        "external_url": current_song.external_url,
+                        "stream_url": current_song.stream_url,
+                    },
+                    False,
+                    enqueue_first=False,
+                )
+            except ProviderError:
+                if site_mode.accepts_song_requests():
+                    raise
+                if self._finish_closing_if_drained():
+                    return
+            else:
+                queue_changed.set()
 
         if user_manager.partymode_enabled() and random.random() < storage.get(
             "alarm_probability"
@@ -718,6 +753,8 @@ def handle_autoplay(url: Optional[str] = None) -> None:
     """Checks whether to add a song by autoplay and does so if necessary.
     :param url: if given, this url is used to find the next autoplayed song.
     Otherwise, the current song is used."""
+    if not site_mode.accepts_song_requests():
+        return
     if storage.get("autoplay") and models.QueuedSong.objects.count() == 0:
         if url is None:
             # if no url was specified, use the one of the current song
@@ -741,8 +778,15 @@ def handle_autoplay(url: Optional[str] = None) -> None:
         except Exception as error:  # pylint: disable=broad-except
             logging.exception("error during suggestions for %s: %s", url, error)
         else:
+            if not site_mode.accepts_song_requests():
+                return
             provider = SongProvider.create(external_url=suggestion)
-            provider.request("", archive=False, manually_requested=False)
+            from core.musiq.music_provider import ProviderError
+            try:
+                provider.request("", archive=False, manually_requested=False)
+            except ProviderError:
+                if site_mode.accepts_song_requests():
+                    raise
 
 
 def stop() -> None:
