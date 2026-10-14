@@ -1605,9 +1605,9 @@
     html.furatic-desktop-panels #auto-queue-count { display: block; padding: 6px 0 0; }
     html.furatic-desktop-panels #auto-queue-toggle > i { transform: rotate(-90deg); }
     html.furatic-desktop-panels #auto-queue-toggle[aria-expanded="true"] > i { transform: rotate(90deg); }
-    html.furatic-desktop-panels #auto-queue-preview { grid-template-columns: 1fr; width: 100%; overflow-y: auto; min-height: 0; text-align: center; }
+    html.furatic-desktop-panels #auto-queue-preview { grid-template-columns: 1fr; grid-auto-rows: min-content; align-content: start; flex: 1 1 0; width: 100%; overflow: hidden; min-height: 0; text-align: center; }
     html.furatic-desktop-panels #auto-queue-preview.is-empty { writing-mode: horizontal-tb; width: 100%; line-height: 1.4; }
-    html.furatic-desktop-panels .auto-queue-thumbnail { flex-shrink: 0; }
+    html.furatic-desktop-panels .auto-queue-thumbnail { flex-shrink: 0; width: 100%; height: auto; min-height: 0; aspect-ratio: 1; }
     html.furatic-desktop-panels .auto-queue-expanded-note { display: none; }
     html.furatic-desktop-panels #toast-container { padding-left: calc(12px + var(--desktop-side-space, 136px)); transition: padding-left 600ms cubic-bezier(.4,0,.2,1); }
     @media (prefers-reduced-motion: reduce) {
