@@ -11,6 +11,7 @@ COPY backend/core /opt/raveberry/core
 COPY backend/config /opt/raveberry/config
 COPY backend/main /opt/raveberry/main
 COPY backend/templates /opt/raveberry/templates
+COPY backend/visualizer /opt/raveberry/visualizer
 COPY backend/resources /opt/raveberry/resources
 COPY AUTHORS LICENSE backend/manage.py backend/VERSION /opt/raveberry/
 COPY docker/entrypoint.sh /entrypoint.sh
