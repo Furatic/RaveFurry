@@ -75,7 +75,13 @@ function finishPromotion(promotion: ReturnType<typeof capturePromotion>) {
   const animations: Animation[] = [];
   const visuals: HTMLElement[] = [];
   const mount = (visual: HTMLElement, rect: DOMRect) => {
+    // Queue controls carry relative insets and centering into their snapshots.
+    // Only the measured viewport rectangles should position the fixed copies.
+    for (const property of ['inset-block-start', 'inset-block-end', 'inset-inline-start', 'inset-inline-end']) {
+      visual.style.removeProperty(property);
+    }
     Object.assign(visual.style, {position: 'fixed', left: rect.left + 'px', top: rect.top + 'px',
+      right: 'auto', bottom: 'auto', alignSelf: 'start', justifySelf: 'start',
       width: rect.width + 'px', height: rect.height + 'px', minWidth: '0', minHeight: '0',
       maxWidth: 'none', maxHeight: 'none', margin: '0', transform: 'none',
       boxSizing: 'border-box', zIndex: '20', pointerEvents: 'none'});
