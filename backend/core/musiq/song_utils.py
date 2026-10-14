@@ -2,6 +2,7 @@
 
 import os
 import re
+import unicodedata
 from typing import TYPE_CHECKING, Optional, TypedDict
 
 import mutagen.easymp4
@@ -83,8 +84,19 @@ def format_seconds(seconds: int) -> str:
     return formatted
 
 
+def display_artist(artist: str, title: str) -> str:
+    """Omit the extra artist label when the title already names that artist."""
+    artist = artist or ""
+    label = re.sub(r"\s*[-–—]\s*Topic$|VEVO$", "", artist, flags=re.IGNORECASE)
+    def words(value: str) -> str:
+        return re.sub(r"[\W_]+", " ", unicodedata.normalize("NFKC", value).casefold()).strip()
+    name, text = words(label), words(title or "")
+    return "" if name and f" {name} " in f" {text} " else artist
+
+
 def displayname(artist: str, title: str) -> str:
     """Formats the given artist and title as a presentable display name."""
+    artist = display_artist(artist, title)
     if artist == "":
         return title
     return artist + " – " + title
