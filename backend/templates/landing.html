@@ -842,9 +842,9 @@
         .player-layout.is-tv-open { padding-bottom: var(--dock-reserve, 112px); }
         .control-dock { top: calc(var(--mobile-content-height, 500px) + 12px); left: 8px; right: 8px; bottom: auto;
           display: grid; grid-template-columns: minmax(72px, 1fr) auto; gap: 14px; align-items: center; }
-        .logo-slot { display: block; min-width: 0; width: min(100%, 150px); }
+        .logo-slot { display: block; min-width: 0; width: min(100%, 120px); }
         .logo-slot .brand { position: static; width: 100%; }
-        .action-buttons { align-items: center; gap: 8px; }
+        .control-dock .action-buttons { flex-direction: row; align-items: center; gap: 8px; }
         .control-dock .notify-row { flex-direction: row; gap: 8px; }
         .control-dock .icon-button { width: 44px; min-width: 44px; min-height: 44px; height: 44px; border-radius: 14px; }
         .tv-panel { flex: 0 0 auto; width: 100%; max-height: none; height: 0; margin: 0; padding: 0; gap: 10px;
@@ -858,9 +858,13 @@
         .tv-video { width: 100%; max-width: 100%; }
         #queue-player-frame { transition: height 600ms cubic-bezier(.4,0,.2,1); }
       }
+      @media (max-width: 360px) {
+        .control-dock { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+        .control-dock .action-buttons, .control-dock .notify-row { gap: 6px; }
+      }
       @media (min-width: 800px) and (max-width: 1580px) {
         .control-dock { left: auto; right: -66px; top: calc(var(--mobile-content-height, 500px) - 238px); width: 54px; display: flex; }
-        .action-buttons, .control-dock .notify-row { flex-direction: column; gap: 12px; }
+        .control-dock .action-buttons, .control-dock .notify-row { flex-direction: column; gap: 12px; }
         .control-dock .icon-button { width: 54px; min-width: 54px; height: 46px; min-height: 46px; }
         .logo-slot { position: absolute; right: 74px; top: 252px; width: 150px; }
       }
@@ -1283,9 +1287,10 @@
         }
         function setDrawer(drawer) {
           leftDrawer = drawer;
-          const space = desktopQuery.matches ? (drawer ? 570 : 136) : 0;
+          const space = desktopQuery.matches ? (drawer === "history" ? 596 : drawer ? 570 : 136) : 0;
           playerLayout.style.setProperty("--desktop-side-space", space + "px");
           queuePanels()?.setSpace(space);
+          settlePlacements();
         }
         const brand = document.getElementById("brand");
         const logoSlot = document.getElementById("logo-slot");
@@ -1296,35 +1301,54 @@
         document.body.appendChild(viewportProbe);
         const placementElements = [brand, toggleButton, ...document.querySelectorAll(".notify-row > a")];
         const placements = new Map();
-        const placementAnimations = new Map();
-        function settlePlacements() {
-          placementElements.forEach(element => {
-            const previous = placements.get(element);
-            const running = placementAnimations.get(element);
-            const presented = element.getBoundingClientRect();
-            running?.cancel();
-            const after = element.getBoundingClientRect();
-            const before = running && previous && after.width && after.height ? {
-              left: previous.left + presented.left - after.left, top: previous.top + presented.top - after.top,
-              width: presented.width * previous.width / after.width, height: presented.height * previous.height / after.height
-            } : previous;
-            if (before && after.width && after.height && document.body.classList.contains("is-logo-docked") &&
-                !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-              const dx = before.left - after.left, dy = before.top - after.top;
-              if (Math.abs(dx) + Math.abs(dy) + Math.abs(before.width - after.width) > .5) {
-                element.style.transformOrigin = "top left";
-                const motion = element.animate([
-                  {transform: "translate(" + dx + "px," + dy + "px) scale(" + before.width / after.width + "," + before.height / after.height + ")"},
-                  {transform: "translate(0,0) scale(1,1)"}
-                ], {duration: 600, easing: "cubic-bezier(.4,0,.2,1)"});
-                placementAnimations.set(element, motion);
-                motion.finished.catch(() => undefined).then(() => {
-                  if (placementAnimations.get(element) === motion) { placementAnimations.delete(element); motion.cancel(); }
-                });
-              }
+        let placementFrame = 0, placementTime = 0, placementRequested = 0;
+        const placementKeys = ["left", "top", "width", "height"];
+        function placementTargets() {
+          // Measure natural layout for the whole batch before applying visual offsets.
+          placementElements.forEach(element => { element.style.translate = "none"; element.style.scale = "1"; });
+          return placementElements.map(element => element.getBoundingClientRect());
+        }
+        function trackPlacements(now) {
+          placementFrame = 0;
+          const dt = placementTime ? Math.min(.064, Math.max(0, (now - placementTime) / 1000)) : 0;
+          placementTime = now;
+          const targets = placementTargets();
+          const animate = document.body.classList.contains("is-logo-docked") &&
+            !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+          let moving = false;
+          placementElements.forEach((element, index) => {
+            const target = targets[index];
+            let state = placements.get(element);
+            if (!state || !animate || !target.width || !target.height) {
+              state = {position: {}, velocity: {}};
+              placementKeys.forEach(key => { state.position[key] = target[key]; state.velocity[key] = 0; });
+              placements.set(element, state);
+            } else {
+              // Critically damped motion preserves both position and velocity on every retarget.
+              // Browser resize and breakpoint changes never cancel or restart a flight.
+              const frequency = 12, decay = Math.exp(-frequency * dt);
+              placementKeys.forEach(key => {
+                const error = state.position[key] - target[key];
+                const carry = state.velocity[key] + frequency * error;
+                state.position[key] = target[key] + (error + carry * dt) * decay;
+                state.velocity[key] = (state.velocity[key] - frequency * carry * dt) * decay;
+                if (Math.abs(state.position[key] - target[key]) > .05 || Math.abs(state.velocity[key]) > .05) moving = true;
+              });
+              element.style.transformOrigin = "top left";
+              element.style.translate = (state.position.left - target.left) + "px " + (state.position.top - target.top) + "px";
+              element.style.scale = state.position.width / target.width + " " + state.position.height / target.height;
             }
-            placements.set(element, after);
           });
+          if (animate && (moving || now - placementRequested < 650)) {
+            placementFrame = window.requestAnimationFrame(trackPlacements);
+          } else {
+            placementElements.forEach(element => { element.style.translate = ""; element.style.scale = ""; });
+            placementTime = 0;
+          }
+        }
+        function settlePlacements() {
+          placementRequested = performance.now();
+          if (!placementFrame) trackPlacements(placementRequested);
         }
         function syncTvAnchor() { syncHeight(); }
         function syncHeight() {
@@ -1373,7 +1397,7 @@
         window.visualViewport?.addEventListener("resize", syncHeight, {passive: true});
         if (window.ResizeObserver) {
           new ResizeObserver(syncHeight).observe(page);
-          
+          new ResizeObserver(settlePlacements).observe(playerLayout);
         }
         syncLayout();
         window.setTimeout(syncHeight, 1200);
