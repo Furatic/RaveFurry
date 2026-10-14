@@ -1,14 +1,21 @@
+import {displayName} from './display-name';
+
 /** One transition owner keeps mutually exclusive drawers from crossing each other. */
 export type Panel = 'auto' | 'history' | null;
 export class DrawerController {
   active: Panel = null;
   desired: Panel = null;
   private running = false;
+  private completion: Promise<void> = Promise.resolve();
   constructor(private transition: (panel: Panel, opening: boolean) => Promise<void>) {}
-  async show(panel: Panel) {
+  show(panel: Panel): Promise<void> {
     this.desired = panel;
-    if (this.running) return;
+    if (this.running) return this.completion;
     this.running = true;
+    this.completion = this.run();
+    return this.completion;
+  }
+  private async run() {
     try {
       while (this.active !== this.desired) {
         if (this.active) {
@@ -68,9 +75,20 @@ async function loadHistory(more = false) {
   }
 }
 
-function transition(panel: Panel, opening: boolean): Promise<void> {
+function desktopLayout(): boolean {
+  return document.documentElement.classList.contains('furatic-desktop-panels');
+}
+
+function parentPanels() {
+  try { return window.parent !== window ? (window.parent as any).furaticPlayerPanels : null; } catch (_error) { return null; }
+}
+
+async function transition(panel: Panel, opening: boolean): Promise<void> {
   const element = document.getElementById(panel + '-drawer');
-  if (!element) return Promise.resolve();
+  if (!element) return;
+  if (opening && desktopLayout()) await parentPanels()?.beforeDrawer();
+  const desktop = desktopLayout();
+  if (desktop) parentPanels()?.setDrawer(opening ? panel : null);
   const historyButton = document.getElementById('queue-history-button');
   const autoButton = document.getElementById('auto-queue-toggle');
   const control = panel === 'auto' ? autoButton : historyButton;
@@ -84,20 +102,21 @@ function transition(panel: Panel, opening: boolean): Promise<void> {
   element.setAttribute('aria-hidden', String(!opening));
   element.toggleAttribute('inert', !opening);
   const queue = document.getElementById('main-queue-scroll');
-  queue.toggleAttribute('inert', opening);
+  queue.toggleAttribute('inert', opening && !desktop);
   if (opening) element.classList.add('is-open'); else element.classList.remove('is-open');
   if (opening && panel === 'history' && Date.now() - historyLoadedAt > 10000) loadHistory();
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (reduced || typeof element.animate !== 'function') {
     if (!opening) element.hidden = true;
-    return Promise.resolve();
+    return;
   }
-  const from = {opacity: 0, transform: panel === 'auto' ? 'translateY(36px)' : 'translateY(12px)'};
-  const to = {opacity: 1, transform: 'translateY(0)'};
+  const from = desktop ? {opacity: 0, transform: 'translateX(90%)', clipPath: 'inset(0 0 0 100%)'} :
+    {opacity: 0, transform: panel === 'auto' ? 'translateY(36px)' : 'translateY(12px)'};
+  const to = desktop ? {opacity: 1, transform: 'translateX(0)', clipPath: 'inset(0 0 0 0)'} : {opacity: 1, transform: 'translateY(0)'};
   const animation = element.animate(opening ? [from, to] : [to, from], {
-    duration: opening ? 420 : 300, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'both',
+    duration: desktop ? 520 : (opening ? 420 : 300), easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'both',
   });
-  return animation.finished.catch(() => undefined).then(() => {
+  await animation.finished.catch(() => undefined).then(() => {
     animation.cancel();
     if (!opening) element.hidden = true;
   });
@@ -107,6 +126,18 @@ export function initPanels(renderer: (songs: any[]) => void) {
   if (!document.getElementById('auto-drawer')) return;
   renderHistory = renderer;
   controller = new DrawerController(transition);
+  (window as any).furaticQueuePanels = {
+    close: () => controller.show(null),
+    current: () => controller.active && document.getElementById(controller.active + '-drawer').classList.contains('is-open') ? controller.active : null,
+    setDesktop: (desktop: boolean) => {
+      document.documentElement.classList.toggle('furatic-desktop-panels', desktop);
+      document.getElementById('main-queue-scroll').toggleAttribute('inert', !desktop && Boolean(controller.active));
+      parentPanels()?.setDrawer((window as any).furaticQueuePanels.current());
+    },
+    setSpace: (space: number) => document.documentElement.style.setProperty('--desktop-side-space', space + 'px'),
+    setVisibleHeight: (height: number) => document.documentElement.style.setProperty('--furatic-visible-height', height + 'px'),
+  };
+  parentPanels()?.syncLayout();
   document.getElementById('queue-history-button').addEventListener('click', () => controller.toggle('history'));
   document.getElementById('auto-queue-toggle').addEventListener('click', () => controller.toggle('auto'));
   document.getElementById('history-close').addEventListener('click', () => {
@@ -140,7 +171,7 @@ export function updateAutoPreview(songs: any[]) {
     preview.replaceChildren(...first.map(song => {
       const link = document.createElement('a');
       link.className = 'auto-queue-thumbnail';
-      link.title = [song.artist, song.title].filter(Boolean).join(' – ');
+      link.title = displayName(song);
       link.setAttribute('aria-label', link.title);
       if (/^https?:\/\//i.test(song.externalUrl)) link.href = song.externalUrl;
       link.target = '_blank'; link.rel = 'noopener noreferrer';
