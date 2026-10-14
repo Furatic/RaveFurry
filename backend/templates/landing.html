@@ -832,8 +832,14 @@
       .action-buttons { opacity: 0; filter: blur(8px); transition: opacity 760ms cubic-bezier(.22,1,.36,1), filter 760ms cubic-bezier(.22,1,.36,1); }
       body.is-ready .action-buttons { opacity: 1; filter: none; }
       .action-buttons, .control-dock .notify-row { display: flex; flex-direction: column; gap: 12px; flex-wrap: nowrap; }
-      .control-dock .tv-corner-button { position: relative; inset: auto; translate: none; scale: 1; transform: none; }
+      .control-dock .tv-corner-button { position: relative; inset: auto; translate: none; scale: 1; transform: none;
+        transition-property: opacity, transform, filter, background, box-shadow; }
+      .player-layout.is-tv-open .control-dock .tv-corner-button { transform: none; }
       .logo-slot { display: none; }
+      @media (min-width: 1581px) {
+        .player-layout.is-tv-open .logo-slot { display: block; position: absolute; right: 74px; top: 252px; width: 150px; }
+        .player-layout.is-tv-open .logo-slot .brand { position: static; width: 100%; }
+      }
       @media (max-width: 1580px) {
         html, body { height: 100svh; min-height: 0; overflow: hidden; }
         .page { height: 100svh; min-height: 0; padding: 12px 14px max(24px, env(safe-area-inset-bottom)); }
@@ -1353,7 +1359,7 @@
         function syncTvAnchor() { syncHeight(); }
         function syncHeight() {
           const desktop = desktopQuery.matches;
-          const home = desktop ? logoHome : logoSlot;
+          const home = desktop && !wantsTv ? logoHome : logoSlot;
           if (brand.parentElement !== home) home.appendChild(brand);
           const style = window.getComputedStyle(page);
           const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
