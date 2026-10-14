@@ -57,6 +57,9 @@ class SongQueue(models.Manager):
     def promote_oldest_extra(self, requester_token: str) -> None:
         """Promote this requester's oldest overflow song, if one exists."""
         queue_lock.acquire()
+        from core import site_mode
+        if site_mode.is_closing():
+            return
         if not requester_token or self.filter(
             requester_token=requester_token,
             priority_tier="normal",
@@ -121,6 +124,13 @@ class SongQueue(models.Manager):
     ) -> QueuedSong:
         """Creates a new song at the end of the queue and returns it."""
         queue_lock.acquire()
+        from core import site_mode
+        if not site_mode.accepts_song_requests():
+            from core.musiq.music_provider import ProviderError
+            raise ProviderError(
+                "Closing time: we are no longer accepting new songs. Thanks for coming!"
+                if site_mode.is_closing() else "FURATIC is currently in After Hours mode."
+            )
         last = self.last()
         index = 1 if last is None else last.index + 1
         song = self.create(
