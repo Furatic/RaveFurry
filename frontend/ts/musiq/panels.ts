@@ -110,11 +110,11 @@ async function transition(panel: Panel, opening: boolean): Promise<void> {
     if (!opening) element.hidden = true;
     return;
   }
-  const from = desktop ? {opacity: 0, transform: 'translateX(90%)', clipPath: 'inset(0 0 0 100%)'} :
+  const from = desktop ? {opacity: 0, transform: 'translateX(72px)'} :
     {opacity: 0, transform: panel === 'auto' ? 'translateY(36px)' : 'translateY(12px)'};
-  const to = desktop ? {opacity: 1, transform: 'translateX(0)', clipPath: 'inset(0 0 0 0)'} : {opacity: 1, transform: 'translateY(0)'};
+  const to = desktop ? {opacity: 1, transform: 'translateX(0)'} : {opacity: 1, transform: 'translateY(0)'};
   const animation = element.animate(opening ? [from, to] : [to, from], {
-    duration: desktop ? 520 : (opening ? 420 : 300), easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'both',
+    duration: desktop ? 600 : 420, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'both',
   });
   await animation.finished.catch(() => undefined).then(() => {
     animation.cancel();
