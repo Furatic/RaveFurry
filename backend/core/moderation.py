@@ -476,13 +476,29 @@ def set_site_mode(request: WSGIRequest) -> HttpResponse:
     if mode not in site_mode.VALID_MODES:
         return HttpResponseBadRequest("Invalid site mode")
 
-    selected_mode = site_mode.set_mode(mode)
+    from core import queue_lock, voting
+    from core.musiq import next_up
+
+    with transaction.atomic():
+        queue_lock.acquire()
+        if mode == site_mode.CLOSING_MODE:
+            pre_queue = list(playback.queue.filter(priority_tier="extra").values("id", "occurrence_id"))
+            for song in pre_queue:
+                user_manager.release_queue_slot_for_song(song["id"])
+                next_up.clear_if_locked(song["id"])
+                voting.retire(song["occurrence_id"])
+            playback.queue.filter(priority_tier="extra").delete()
+            playback.queue.rebalance_priorities()
+        selected_mode = site_mode.set_mode(mode)
     audit_log.append("moderator_set_site_mode", request=request, target=selected_mode)
 
     if selected_mode == site_mode.AFTER_HOURS_MODE:
         playback.request_operator_command("pause_for_afterhours")
     else:
         playback.request_operator_command("resume_from_afterhours")
+
+    if selected_mode == site_mode.CLOSING_MODE:
+        musiq.update_state()
 
     return JsonResponse({"mode": selected_mode})
 
