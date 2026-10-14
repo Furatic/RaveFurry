@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.http import FileResponse, HttpResponse
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_GET
 import requests
 
@@ -79,6 +80,7 @@ feed = FeatureFeed()
 
 
 @require_GET
+@xframe_options_sameorigin
 def background(_request):
     page = Path(__file__).resolve().parent.parent / "visualizer" / "web-background.html"
     response = FileResponse(page.open("rb"), content_type="text/html")
