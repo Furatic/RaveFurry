@@ -396,7 +396,7 @@ def request_music(request: WSGIRequest) -> HttpResponse:
     song_number = active_count + 1
     ordinal = str(song_number) + {2: "nd", 3: "rd"}.get(song_number, "th")
     provider.submission_message = (
-        f"Added your {ordinal} song to the extended queue."
+        f"Added your {ordinal} song to the pre-queue."
         if has_primary else provider.ok_message
     )
     provider.submission_query = query
