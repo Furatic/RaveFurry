@@ -84,12 +84,15 @@
         z-index: 2;
         min-height: 100svh;
         display: grid;
-        place-items: center;
+        place-items: start center;
+        align-content: start;
         padding: clamp(18px, 3vw, 40px);
       }
 
       .shell {
-        width: min(100%, 960px);
+        width: min(100%, 880px);
+        display: grid;
+        gap: 18px;
         opacity: 0;
         transform: translateY(18px) scale(0.985);
         transition:
@@ -108,7 +111,7 @@
         overflow: hidden;
         isolation: isolate;
         border-radius: var(--radius);
-        padding: clamp(24px, 4vw, 44px);
+        padding: clamp(22px, 3vw, 34px);
         background: rgba(6, 10, 22, 0.25);
         border: 1px solid rgba(255, 255, 255, 0.10);
         box-shadow: var(--panel-shadow);
@@ -140,7 +143,7 @@
 
       .hero {
         display: grid;
-        grid-template-columns: 128px 1fr;
+        grid-template-columns: 112px 1fr;
         gap: clamp(18px, 3vw, 28px);
         align-items: center;
         margin-top: 4px;
@@ -148,8 +151,8 @@
 
       .logo-wrap {
         position: relative;
-        width: 128px;
-        height: 128px;
+        width: 112px;
+        height: 112px;
         display: grid;
         place-items: center;
         border-radius: 28px;
@@ -196,8 +199,8 @@
       .logo-wrap img {
         position: relative;
         z-index: 1;
-        width: 88px;
-        height: 88px;
+        width: 78px;
+        height: 78px;
         display: block;
         filter:
           drop-shadow(0 10px 30px rgba(0,0,0,0.26))
@@ -207,7 +210,7 @@
 
       h1 {
         margin: 0 0 12px;
-        font-size: clamp(36px, 6vw, 64px);
+        font-size: clamp(32px, 5.2vw, 54px);
         line-height: 0.95;
         letter-spacing: -0.05em;
         text-wrap: balance;
@@ -217,7 +220,7 @@
         margin: 0;
         max-width: 58ch;
         color: var(--muted);
-        font-size: clamp(16px, 2.15vw, 21px);
+        font-size: clamp(16px, 2vw, 19px);
         line-height: 1.62;
         text-wrap: pretty;
       }
@@ -328,7 +331,7 @@
 
       @media (max-width: 760px) {
         .page {
-          align-items: center;
+          align-items: start;
         }
 
         .hero {
@@ -352,6 +355,30 @@
           padding: 22px 18px 20px;
           border-radius: 24px;
         }
+      }
+
+      .top-songs-header { margin-bottom: 22px; }
+      .top-songs-header h2 { margin: 0 0 10px; font-size: clamp(23px, 3.6vw, 32px); line-height: 1.15; letter-spacing: -0.04em; text-wrap: balance; }
+      .top-songs-header p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.65; }
+      .top-songs-label { display: block; margin-top: 8px; color: var(--muted-2); font-size: 12px; }
+      .top-songs-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+      .top-song { display: grid; grid-template-columns: 28px 44px minmax(0, 1fr) auto; align-items: center; gap: 14px; min-width: 0; padding: 12px 14px; border-radius: 16px; border: 1px solid var(--white-soft); background: rgba(255, 255, 255, 0.025); }
+      .top-song-rank { color: var(--muted-2); font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: center; }
+      .top-song:nth-child(-n+3) { border-color: rgba(var(--cyan), 0.18); background: rgba(var(--cyan), 0.035); }
+      .top-song:nth-child(-n+3) .top-song-rank { color: var(--text); }
+      .top-song-art { position: relative; width: 44px; height: 44px; display: grid; place-items: center; overflow: hidden; border-radius: 11px; background: linear-gradient(135deg, rgba(var(--cyan), 0.14), rgba(var(--magenta), 0.10)); color: var(--muted); font-size: 24px; }
+      .top-song-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .top-song-copy { min-width: 0; }
+      .top-song-title { display: block; font-size: 15px; line-height: 1.4; overflow-wrap: anywhere; }
+      .top-song-artist { display: block; margin-top: 3px; color: var(--muted-2); font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+      .top-song-votes { white-space: nowrap; padding: 7px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.05); font-size: 13px; font-variant-numeric: tabular-nums; }
+      .top-songs-empty { padding: 18px 0 4px; color: var(--muted-2); font-size: 14px; line-height: 1.6; }
+      .top-songs-status { margin: 12px 0 0; color: var(--muted-2); font-size: 12px; line-height: 1.5; }
+      .top-songs-status:empty { display: none; }
+      @media (max-width: 520px) {
+        .top-song { grid-template-columns: 22px 36px minmax(0, 1fr) auto; gap: 9px; padding: 10px 9px; }
+        .top-song-art { width: 36px; height: 36px; border-radius: 9px; }
+        .top-song-votes { padding: 6px 8px; font-size: 12px; }
       }
 
       @media (prefers-reduced-motion: reduce) {
@@ -444,6 +471,25 @@
             </div>
           </div>
         </div>
+        <section class="card top-songs-card" aria-labelledby="top-songs-title">
+          <div class="top-songs-header">
+            <h2 id="top-songs-title">Top songs from today's Pass the Aux event</h2>
+            <p>Thank you for joining! Here are the songs everyone upvoted the most.</p>
+          </div>
+          <ol id="top-songs-list" class="top-songs-list" aria-label="Songs ranked by votes">
+            {% for song in afterhours_top_songs %}
+            <li class="top-song">
+              <span class="top-song-rank" aria-hidden="true">{{ forloop.counter }}</span>
+              <span class="top-song-art" aria-hidden="true">♪{% if song.artworkUrl %}<img src="{{ song.artworkUrl }}" alt="" loading="lazy" decoding="async" onerror="this.remove()">{% endif %}</span>
+              <span class="top-song-copy"><strong class="top-song-title">{{ song.title }}</strong><span class="top-song-artist">{{ song.artist }}</span></span>
+              <span class="top-song-votes">{{ song.votes }} vote{{ song.votes|pluralize }}</span>
+            </li>
+            {% empty %}
+            <li class="top-songs-empty">{% if afterhours_top_songs_unavailable %}Top songs are temporarily unavailable. We'll try again shortly.{% else %}No songs from the last 12 hours yet. Thank you for being here.{% endif %}</li>
+            {% endfor %}
+          </ol>
+          <p id="top-songs-status" class="top-songs-status" role="status" aria-live="polite"></p>
+        </section>
       </section>
     </main>
 
@@ -701,6 +747,44 @@
         });
       })();
 
+      function escapeSongText(value) {
+        return String(value == null ? "" : value).replace(/[&<>"']/g, function (character) {
+          return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[character];
+        });
+      }
+
+      let topSongsInFlight = false;
+      let topSongsSignature = "";
+      async function refreshTopSongs() {
+        if (topSongsInFlight) return;
+        topSongsInFlight = true;
+        const abort = new AbortController();
+        const timeout = window.setTimeout(function () { abort.abort(); }, 9000);
+        const status = document.getElementById("top-songs-status");
+        try {
+          const response = await fetch("{% url 'afterhours-top-songs' %}", {cache: "no-store", signal: abort.signal});
+          if (!response.ok) throw new Error("Top songs unavailable");
+          const data = await response.json();
+          if (!Array.isArray(data.songs)) throw new Error("Invalid top songs");
+          const songs = data.songs.slice(0, 20);
+          const signature = JSON.stringify(songs);
+          if (signature !== topSongsSignature) {
+            document.getElementById("top-songs-list").innerHTML = songs.length ? songs.map(function (song, index) {
+              const artwork = /^https?:\/\//i.test(String(song.artworkUrl || "")) ? '<img src="' + escapeSongText(song.artworkUrl) + '" alt="" loading="lazy" decoding="async" onerror="this.remove()">' : "";
+              const votes = Number.isFinite(Number(song.votes)) ? Number(song.votes) : 0;
+              return '<li class="top-song"><span class="top-song-rank" aria-hidden="true">' + (index + 1) + '</span><span class="top-song-art" aria-hidden="true">♪' + artwork + '</span><span class="top-song-copy"><strong class="top-song-title">' + escapeSongText(song.title) + '</strong><span class="top-song-artist">' + escapeSongText(song.artist) + '</span></span><span class="top-song-votes">' + votes + ' vote' + (votes === 1 ? '' : 's') + '</span></li>';
+            }).join("") : '<li class="top-songs-empty">No songs from the last 12 hours yet. Thank you for being here.</li>';
+            topSongsSignature = signature;
+          }
+          status.textContent = "";
+        } catch (_error) {
+          status.textContent = "Top songs will refresh when the connection returns.";
+        } finally {
+          window.clearTimeout(timeout);
+          topSongsInFlight = false;
+        }
+      }
+
       async function pollMode() {
         try {
           const response = await fetch("/api/site-mode/", { cache: "no-store" });
@@ -716,6 +800,8 @@
 
       pollMode();
       setInterval(pollMode, 7000);
+      refreshTopSongs();
+      setInterval(refreshTopSongs, 60000);
     </script>
   </body>
 </html>
