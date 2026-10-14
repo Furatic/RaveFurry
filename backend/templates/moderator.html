@@ -721,6 +721,74 @@
         font-size: 13px;
       }
 
+      .connection-overlay.server-down,
+      .connection-overlay.restored {
+        inset: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) auto auto;
+        width: min(380px, calc(100vw - 36px));
+        padding: 0;
+        background: none;
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+        pointer-events: none;
+      }
+
+      .connection-overlay.server-down .connection-card,
+      .connection-overlay.restored .connection-card {
+        width: 100%;
+        grid-template-columns: 36px minmax(0, 1fr);
+        justify-items: start;
+        gap: 5px 14px;
+        padding: 18px;
+        border-radius: 20px;
+        text-align: left;
+        background: rgba(8, 12, 26, 0.94);
+        box-shadow: 0 16px 50px rgba(0, 0, 0, 0.32);
+        -webkit-backdrop-filter: blur(20px);
+        backdrop-filter: blur(20px);
+        transform: translate3d(0, -12px, 0) scale(0.98);
+        filter: blur(4px);
+      }
+
+      .connection-overlay.visible.server-down .connection-card,
+      .connection-overlay.visible.restored .connection-card {
+        transform: translate3d(0, 0, 0) scale(1);
+        filter: blur(0);
+      }
+
+      .connection-overlay.server-down .connection-mark,
+      .connection-overlay.restored .connection-mark { width: 36px; height: 36px; grid-row: 1 / 4; }
+      .connection-overlay.server-down .connection-spinner,
+      .connection-overlay.restored .connection-spinner { width: 18px; height: 18px; }
+      .connection-overlay.server-down .connection-title,
+      .connection-overlay.restored .connection-title { font-size: 17px; line-height: 1.3; letter-spacing: -0.025em; }
+      .connection-overlay.server-down .connection-copy,
+      .connection-overlay.restored .connection-copy { font-size: 13px; }
+      .connection-overlay.server-down .connection-detail,
+      .connection-overlay.restored .connection-detail { min-height: 0; font-size: 12px; line-height: 1.5; }
+
+      .alert-preview {
+        position: fixed;
+        right: max(18px, env(safe-area-inset-right));
+        bottom: max(88px, env(safe-area-inset-bottom));
+        z-index: 99;
+        width: min(380px, calc(100vw - 36px));
+        padding: 18px 20px;
+        border: 1px solid rgba(0, 142, 248, 0.28);
+        border-radius: 20px;
+        background: rgba(8, 12, 26, 0.94);
+        box-shadow: 0 16px 50px rgba(0, 0, 0, 0.32);
+        -webkit-backdrop-filter: blur(20px);
+        backdrop-filter: blur(20px);
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transform: translate3d(0, 14px, 0) scale(0.98);
+        transition: opacity 480ms ease, visibility 480ms ease, transform 540ms cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .alert-preview.visible { opacity: 1; visibility: visible; transform: translate3d(0, 0, 0) scale(1); }
+      .alert-preview strong { display: block; margin-bottom: 7px; font-size: 15px; }
+      .alert-preview p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+
       @keyframes moderatorConnectionSpin {
         to {
           transform: rotate(360deg);
@@ -729,7 +797,8 @@
 
       @media (prefers-reduced-motion: reduce) {
         .connection-overlay,
-        .connection-card {
+        .connection-card,
+        .alert-preview {
           transition: none;
         }
 
@@ -1104,14 +1173,15 @@
     </main>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="alert-preview" class="alert-preview" role="status" aria-live="polite" aria-hidden="true"></div>
     <dialog id="song-details-dialog" class="song-details-dialog"><div id="song-details-content"></div><button id="song-details-close" type="button">Close</button></dialog>
 
     <div
       id="connection-overlay"
       class="connection-overlay"
-      role="alertdialog"
-      aria-live="assertive"
-      aria-modal="true"
+      role="status"
+      aria-live="polite"
+      aria-hidden="true"
       aria-labelledby="connection-overlay-title"
       aria-describedby="connection-overlay-copy"
     >
@@ -1195,6 +1265,11 @@
         const detailElement = document.getElementById("connection-overlay-detail");
 
         connectionOverlayMode = mode;
+        overlay.setAttribute("role", mode === "login-required" ? "alertdialog" : "status");
+        overlay.setAttribute("aria-live", mode === "login-required" ? "assertive" : "polite");
+        overlay.setAttribute("aria-hidden", "false");
+        if (mode === "login-required") overlay.setAttribute("aria-modal", "true");
+        else overlay.removeAttribute("aria-modal");
         overlay.className = "connection-overlay visible " + mode;
         titleElement.textContent = title;
         copyElement.textContent = copy;
@@ -1204,22 +1279,29 @@
       function hideConnectionOverlay() {
         const overlay = document.getElementById("connection-overlay");
         connectionOverlayMode = "";
-        overlay.className = "connection-overlay";
+        overlay.classList.remove("visible");
+        overlay.setAttribute("aria-hidden", "true");
       }
 
       function showServerRestartOverlay(detail) {
+        if (loginRedirectScheduled) return;
+        window.clearTimeout(restoredOverlayTimer);
         setConnectionOverlay(
           "server-down",
-          "Server restarting",
-          "The local Furatic web server is temporarily unavailable and is trying to restart itself.",
-          detail || "Connection should be restored in just a few moments."
+          "Reconnecting",
+          "Refreshing server data as soon as the connection returns.",
+          detail || "Your page and enabled moderation alerts stay active."
         );
+        if (!refreshInFlight) {
+          window.clearTimeout(refreshTimer);
+          refreshTimer = window.setTimeout(refreshState, 1500);
+        }
       }
 
       function showConnectionRestoredOverlay() {
         setConnectionOverlay("restored", "Connection restored", "The moderation panel is back in sync.", "Your forms and scroll positions have been kept.");
         window.clearTimeout(restoredOverlayTimer);
-        restoredOverlayTimer = window.setTimeout(function () { if (connectionOverlayMode === "restored") hideConnectionOverlay(); }, 900);
+        restoredOverlayTimer = window.setTimeout(function () { if (connectionOverlayMode === "restored") hideConnectionOverlay(); }, 1800);
       }
 
       function showLoginRequiredOverlay() {
@@ -1253,6 +1335,11 @@
       async function parseModeratorJsonResponse(response) {
         const contentType = String(response.headers.get("content-type") || "").toLowerCase();
 
+        if (response.redirected && new URL(response.url, window.location.href).pathname === new URL(MODERATOR_LOGIN_URL, window.location.href).pathname) {
+          showLoginRequiredOverlay();
+          throwHandled();
+        }
+
         if (response.status === 401 || response.status === 403) {
           const error = contentType.includes("application/json") ? await response.json() : {};
           if (error.loginRequired || response.status === 401) { showLoginRequiredOverlay(); throwHandled(); }
@@ -1261,7 +1348,7 @@
 
         if (!response.ok) {
           if (response.status === 502 || response.status === 503 || response.status === 504) {
-            showServerRestartOverlay("The web process is recovering. Furatic will reconnect automatically.");
+            showServerRestartOverlay();
             throwHandled();
           }
 
@@ -1270,7 +1357,7 @@
         }
 
         if (!contentType.includes("application/json")) {
-          showLoginRequiredOverlay();
+          showServerRestartOverlay();
           throwHandled();
         }
 
@@ -1969,15 +2056,58 @@
 
       let lastHeldKeys = new Set();
       let alertAudioContext = null;
-      function playReviewDing() {
-        if (!alertAudioContext) return;
-        const oscillator = alertAudioContext.createOscillator();
-        const gain = alertAudioContext.createGain();
-        oscillator.frequency.value = 880;
-        gain.gain.setValueAtTime(.22, alertAudioContext.currentTime);
-        gain.gain.exponentialRampToValueAtTime(.001, alertAudioContext.currentTime + .45);
-        oscillator.connect(gain); gain.connect(alertAudioContext.destination);
-        oscillator.start(); oscillator.stop(alertAudioContext.currentTime + .45);
+      let moderationAlertsEnabled = false;
+      let alertPreviewPending = false;
+      let reviewSoundEndsAt = 0;
+      async function playReviewSound() {
+        const context = alertAudioContext;
+        if (!moderationAlertsEnabled || !context) return;
+        try {
+          if (context.state === "suspended") await context.resume();
+        } catch (_error) { return; }
+        if (context.state !== "running" || context.currentTime < reviewSoundEndsAt) return;
+
+        const start = context.currentTime + 0.04;
+        reviewSoundEndsAt = start + 7;
+        const master = context.createGain();
+        const compressor = context.createDynamicsCompressor();
+        const echo = context.createDelay(0.5);
+        const echoGain = context.createGain();
+        master.gain.value = 0.8;
+        compressor.threshold.value = -18;
+        compressor.knee.value = 12;
+        compressor.ratio.value = 3;
+        compressor.attack.value = 0.008;
+        compressor.release.value = 0.2;
+        echo.delayTime.value = 0.28;
+        echoGain.gain.value = 0.12;
+        master.connect(compressor);
+        master.connect(echo); echo.connect(echoGain); echoGain.connect(compressor);
+        compressor.connect(context.destination);
+
+        // Three warm, rising chime phrases; soft attacks and a quiet echo avoid harsh edges.
+        [0, 2.25, 4.5].forEach(function (phrase, phraseIndex) {
+          [587.33, 739.99, 880].forEach(function (frequency, noteIndex) {
+            const at = start + phrase + [0, 0.32, 0.68][noteIndex];
+            const duration = phraseIndex === 2 && noteIndex === 2 ? 1.5 : 1.05;
+            [0.18, 0.038, 0.009].forEach(function (level, harmonic) {
+              const oscillator = context.createOscillator();
+              const envelope = context.createGain();
+              oscillator.type = "sine";
+              oscillator.frequency.value = frequency * (harmonic + 1);
+              envelope.gain.setValueAtTime(0.0001, at);
+              envelope.gain.exponentialRampToValueAtTime(level, at + 0.022);
+              envelope.gain.exponentialRampToValueAtTime(level * 0.28, at + 0.3);
+              envelope.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+              oscillator.connect(envelope); envelope.connect(master);
+              oscillator.onended = function () { oscillator.disconnect(); envelope.disconnect(); };
+              oscillator.start(at); oscillator.stop(at + duration);
+            });
+          });
+        });
+        window.setTimeout(function () {
+          master.disconnect(); echo.disconnect(); echoGain.disconnect(); compressor.disconnect();
+        }, 7300);
       }
       function highlightedLyrics(song) {
         let value = escapeHtml(song.lyrics || "Lyrics unavailable");
@@ -1993,7 +2123,7 @@
         document.getElementById("review-count").textContent = String(held.length);
         const nextKeys = new Set(held.map(function (song) { return String(song.queueKey); }));
         if (held.some(function (song) { return !lastHeldKeys.has(String(song.queueKey)); })) {
-          playReviewDing();
+          if (!alertPreviewPending) playReviewSound();
         }
         lastHeldKeys = nextKeys;
         document.getElementById("review-list").innerHTML = held.map(function (song) {
@@ -2110,11 +2240,13 @@
       }
 
       let refreshInFlight = false;
+      let refreshTimer = 0;
       async function refreshState() {
         if (refreshInFlight || loginRedirectScheduled) {
           return;
         }
 
+        window.clearTimeout(refreshTimer);
         refreshInFlight = true;
         const abort = new AbortController();
         const timeout = window.setTimeout(function () { abort.abort(); }, 9000);
@@ -2144,6 +2276,9 @@
         } finally {
           window.clearTimeout(timeout);
           refreshInFlight = false;
+          if (!loginRedirectScheduled) {
+            refreshTimer = window.setTimeout(refreshState, connectionOverlayMode === "server-down" ? 1500 : 6000);
+          }
         }
       }
 
@@ -2299,15 +2434,32 @@
           handleModeratorRequestError(error, "Unable to switch mode.");
         });
       });
-      document.getElementById("enable-alerts-button").addEventListener("click", function () {
-        alertAudioContext =
-          alertAudioContext ||
-          new (window.AudioContext || window.webkitAudioContext)();
-      
-        alertAudioContext.resume();
+      document.getElementById("enable-alerts-button").addEventListener("click", async function () {
+        try {
+          alertAudioContext = alertAudioContext || new (window.AudioContext || window.webkitAudioContext)();
+          await alertAudioContext.resume();
+        } catch (_error) {
+          showToast("Unable to enable audio. Please try the alerts button again.", "warn");
+          return;
+        }
+        if (moderationAlertsEnabled) return;
+        moderationAlertsEnabled = true;
         this.textContent = "Moderation alerts enabled";
         this.classList.remove("needs-attention");
-        playReviewDing();
+        this.setAttribute("aria-pressed", "true");
+        alertPreviewPending = true;
+        const preview = document.getElementById("alert-preview");
+        preview.innerHTML = "<strong>Moderation alerts enabled</strong><p>You'll hear this sound whenever a song is held for manual moderator review. A preview will play in a moment.</p>";
+        preview.setAttribute("aria-hidden", "false");
+        preview.classList.add("visible");
+        window.setTimeout(function () {
+          alertPreviewPending = false;
+          playReviewSound();
+        }, 2500);
+        window.setTimeout(function () {
+          preview.classList.remove("visible");
+          preview.setAttribute("aria-hidden", "true");
+        }, 10200);
       });
       
       document
@@ -2435,7 +2587,10 @@
       });
 
       refreshState();
-      window.setInterval(refreshState, 6000);
+      window.addEventListener("online", refreshState);
+      document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState === "visible") refreshState();
+      });
     </script>
   </body>
 </html>
