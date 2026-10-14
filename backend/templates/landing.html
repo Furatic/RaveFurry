@@ -80,33 +80,6 @@
 
       .stream-background.is-ready { opacity: 1; transform: scale(1); filter: blur(0); }
 
-      .stream-background > canvas {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        display: none;
-      }
-
-      .stream-background.is-mirroring > canvas { display: block; }
-
-      .stream-background > .tv-video {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        max-width: none;
-        max-height: none;
-        aspect-ratio: auto;
-        object-fit: cover;
-        transform: scale(2);
-        transform-origin: center;
-        border: 0;
-        border-radius: 0;
-        box-shadow: none;
-        background: transparent;
-      }
-
       .stream-background::before {
         content: "";
         position: absolute;
@@ -775,28 +748,28 @@
         .player-layout {
           left: 50%; margin: 0; translate: -50% 0; gap: 0;
           min-width: 0;
-          width: min(calc(100vw - 56px), calc(620px + var(--desktop-side-space, 120px)));
+          width: min(calc(100vw - 56px), calc(620px + var(--desktop-side-space, 136px)));
           transition: width 600ms cubic-bezier(.4,0,.2,1);
         }
         .player-layout::before {
-          content: ""; flex: 0 0 var(--desktop-side-space, 120px);
+          content: ""; flex: 0 0 var(--desktop-side-space, 136px);
           transition: flex-basis 600ms cubic-bezier(.4,0,.2,1);
         }
         .player-layout .player-card {
-          width: calc(100% - var(--desktop-side-space, 120px));
-          flex-basis: calc(100% - var(--desktop-side-space, 120px));
+          width: calc(100% - var(--desktop-side-space, 136px));
+          flex-basis: calc(100% - var(--desktop-side-space, 136px));
           transition: width 600ms cubic-bezier(.4,0,.2,1), flex-basis 600ms cubic-bezier(.4,0,.2,1),
             opacity 760ms cubic-bezier(.22,1,.36,1), filter 1080ms cubic-bezier(.22,1,.36,1), transform 520ms cubic-bezier(.22,1,.36,1), box-shadow 220ms ease;
         }
         .player-layout.is-tv-open { width: min(calc(100vw - 56px), 1640px); }
         .player-layout.is-tv-open .player-card {
-          width: calc((100% - var(--desktop-side-space, 120px) - 14px) * .4);
-          flex-basis: calc((100% - var(--desktop-side-space, 120px) - 14px) * .4);
+          width: calc((100% - var(--desktop-side-space, 136px) - 14px) * .4);
+          flex-basis: calc((100% - var(--desktop-side-space, 136px) - 14px) * .4);
         }
         body.is-ready .player-layout.is-tv-open .player-card { transform: scale(1); }
         #queue-player-frame {
-          width: calc(100% + 40px + var(--desktop-side-space, 120px));
-          margin-left: calc(-20px - var(--desktop-side-space, 120px));
+          width: calc(100% + 40px + var(--desktop-side-space, 136px));
+          margin-left: calc(-20px - var(--desktop-side-space, 136px));
           transition: width 600ms cubic-bezier(.4,0,.2,1), margin-left 600ms cubic-bezier(.4,0,.2,1), height 400ms cubic-bezier(.22,1,.36,1);
         }
         .player-layout .tv-panel {
@@ -808,8 +781,8 @@
             opacity 600ms cubic-bezier(.4,0,.2,1), transform 600ms cubic-bezier(.4,0,.2,1), height 400ms cubic-bezier(.22,1,.36,1);
         }
         .player-layout.is-tv-open .tv-panel {
-          flex: 0 0 calc((100% - var(--desktop-side-space, 120px) - 14px) * .6);
-          width: calc((100% - var(--desktop-side-space, 120px) - 14px) * .6);
+          flex: 0 0 calc((100% - var(--desktop-side-space, 136px) - 14px) * .6);
+          width: calc((100% - var(--desktop-side-space, 136px) - 14px) * .6);
           min-width: 0; max-width: none; margin-left: 14px;
           height: calc(var(--queue-height, min(64.6vh, 748px)) + 2px);
         }
@@ -842,21 +815,107 @@
           transition: none;
         }
       }
+
+      /* The background owns its renderer; TV playback stays in the TV panel. */
+      #visualizer-background { position: absolute; inset: 0; width: 100%; height: 100%; max-height: none; border: 0; }
+      .shell { gap: 0; }
+      .player-layout.reveal-stage { opacity: 1; transform: none; filter: none; }
+      body.is-ready .player-layout.reveal-stage { margin-top: 0; margin-bottom: 0; }
+      .brand { position: fixed; top: 24px; left: 24px; width: 190px; padding: 0; z-index: 9; opacity: 0; }
+      .brand img { display: block; width: 100%; height: auto; max-width: none; margin: 0; }
+      body.is-logo-docked .brand { opacity: 1; }
+      .logo-intro { position: fixed; z-index: 20; pointer-events: none; transform-origin: center; }
+      .control-dock { position: absolute; right: -66px; bottom: 18px; z-index: 8; opacity: 0; filter: blur(8px);
+        transition: opacity 760ms cubic-bezier(.22,1,.36,1), filter 760ms cubic-bezier(.22,1,.36,1); }
+      body.is-ready .control-dock { opacity: 1; filter: none; }
+      .control-dock { opacity: 1; filter: none; }
+      .action-buttons { opacity: 0; filter: blur(8px); transition: opacity 760ms cubic-bezier(.22,1,.36,1), filter 760ms cubic-bezier(.22,1,.36,1); }
+      body.is-ready .action-buttons { opacity: 1; filter: none; }
+      .action-buttons, .control-dock .notify-row { display: flex; flex-direction: column; gap: 12px; flex-wrap: nowrap; }
+      .control-dock .tv-corner-button { position: relative; inset: auto; translate: none; scale: 1; transform: none; }
+      .logo-slot { display: none; }
+      @media (max-width: 1580px) {
+        html, body { height: 100svh; min-height: 0; overflow: hidden; }
+        .page { height: 100svh; min-height: 0; padding: 12px 14px max(24px, env(safe-area-inset-bottom)); }
+        .player-layout, .player-layout.is-tv-open { padding-bottom: var(--dock-reserve, 112px); gap: 0; }
+        .player-card { flex: 0 0 auto; width: 100%; }
+        .player-layout.is-tv-open { padding-bottom: var(--dock-reserve, 112px); }
+        .control-dock { top: calc(var(--mobile-content-height, 500px) + 12px); left: 8px; right: 8px; bottom: auto;
+          display: grid; grid-template-columns: minmax(72px, 1fr) auto; gap: 14px; align-items: center; }
+        .logo-slot { display: block; min-width: 0; width: min(100%, 150px); }
+        .logo-slot .brand { position: static; width: 100%; }
+        .action-buttons { align-items: center; gap: 8px; }
+        .control-dock .notify-row { flex-direction: row; gap: 8px; }
+        .control-dock .icon-button { width: 44px; min-width: 44px; min-height: 44px; height: 44px; border-radius: 14px; }
+        .tv-panel { flex: 0 0 auto; width: 100%; max-height: none; height: 0; margin: 0; padding: 0; gap: 10px;
+          grid-template-rows: 38px minmax(0,1fr); transform: translateY(24px) scale(.985);
+          transition: height 600ms cubic-bezier(.4,0,.2,1), padding 600ms cubic-bezier(.4,0,.2,1),
+            margin-top 600ms cubic-bezier(.4,0,.2,1), opacity 600ms cubic-bezier(.4,0,.2,1), transform 600ms cubic-bezier(.4,0,.2,1); }
+        .player-layout.is-tv-open .tv-panel { height: var(--mobile-tv-height, 260px); padding: 12px; margin-top: 14px; }
+        .tv-panel-head { min-height: 38px; }
+        .tv-video-shell { width: min(100%, calc((var(--mobile-tv-height, 260px) - 90px) * 16 / 9 + 18px));
+          height: auto; max-height: 100%; align-self: center; justify-self: center; padding: 8px; }
+        .tv-video { width: 100%; max-width: 100%; }
+        #queue-player-frame { transition: height 600ms cubic-bezier(.4,0,.2,1); }
+      }
+      @media (min-width: 800px) and (max-width: 1580px) {
+        .control-dock { left: auto; right: -66px; top: calc(var(--mobile-content-height, 500px) - 238px); width: 54px; display: flex; }
+        .action-buttons, .control-dock .notify-row { flex-direction: column; gap: 12px; }
+        .control-dock .icon-button { width: 54px; min-width: 54px; height: 46px; min-height: 46px; }
+        .logo-slot { position: absolute; right: 74px; top: 252px; width: 150px; }
+      }
+      @media (max-height: 420px) and (max-width: 1580px) {
+        .page { overflow-y: auto; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .control-dock, .tv-panel, #queue-player-frame { transition: none !important; }
+      }
+
     </style>
   </head>
   <body>
     <canvas id="aurora" aria-hidden="true" hidden></canvas>
     <div class="background-gradient" aria-hidden="true"></div>
-    <div class="stream-background" id="stream-background" aria-hidden="true"><canvas id="stream-background-mirror" aria-hidden="true"></canvas></div>
+    <div class="stream-background" id="stream-background" aria-hidden="true"><iframe id="visualizer-background" data-src="/visualizer/background/" title="Music reactive background" tabindex="-1" aria-hidden="true"></iframe></div>
     <div class="noise" aria-hidden="true"></div>
     <div class="vignette" aria-hidden="true"></div>
     <div class="event-notifications" id="event-notifications" aria-live="polite" aria-atomic="false"></div>
 
     <main class="page">
       <section class="shell" aria-labelledby="title">
-        <div class="brand">
-          <img class="reveal-stage reveal-stage-1" src="{{ furatic_logo_wide_url }}" alt="FURATIC" decoding="async">
-          <div class="notify-row reveal-stage reveal-stage-2">
+        <div class="brand" id="brand"><img id="brand-logo" src="{{ furatic_logo_wide_url }}" alt="FURATIC" decoding="async"></div>
+
+        <div class="player-layout reveal-stage reveal-stage-3" id="player-layout">
+          <div class="player-card" id="player-card">
+            <div class="player-stage">
+              <iframe
+                id="queue-player-frame"
+                src="/p/?layout=framed"
+                title="FURATIC queue player"
+                allow="autoplay"
+                allowtransparency="true"
+              ></iframe>
+            </div>
+          </div>
+        
+          <div class="control-dock" id="control-dock">
+            <div class="logo-slot" id="logo-slot"></div>
+            <div class="action-buttons">
+<button
+            class="tv-button icon-button tv-corner-button"
+            id="tv-toggle"
+            type="button"
+            aria-label="Open TV panel"
+            title="Open TV panel"
+          >
+            <img
+              src="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/icons/tv-fill.svg"
+              alt=""
+              aria-hidden="true"
+              decoding="async"
+            >
+          </button>
+<div class="notify-row">
             <a
               class="notify-button icon-button{% if not discord_invite_url %} is-disabled{% endif %}"
               href="{% if discord_invite_url %}{{ discord_invite_url }}{% else %}#{% endif %}"
@@ -904,43 +963,16 @@
               >
             </a>
           </div>
-        </div>
-
-        <div class="player-layout reveal-stage reveal-stage-3" id="player-layout">
-          <div class="player-card" id="player-card">
-            <div class="player-stage">
-              <iframe
-                id="queue-player-frame"
-                src="/p/?layout=framed"
-                title="FURATIC queue player"
-                allow="autoplay"
-                allowtransparency="true"
-              ></iframe>
             </div>
           </div>
-        
-          <button
-            class="tv-button icon-button tv-corner-button"
-            id="tv-toggle"
-            type="button"
-            aria-label="Open TV panel"
-            title="Open TV panel"
-          >
-            <img
-              src="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/icons/tv-fill.svg"
-              alt=""
-              aria-hidden="true"
-              decoding="async"
-            >
-          </button>
-        
+
           <div class="tv-panel" id="tv-panel" aria-hidden="true" inert>
             <div class="tv-panel-head">
               <h2>Live stream</h2>
               <button class="mini-button" id="tv-close" type="button" aria-label="Close live stream"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
             </div>
             <div class="tv-video-shell">
-              <video id="tv-player" class="tv-video" autoplay muted playsinline preload="auto" aria-hidden="true" tabindex="-1"></video>
+              <video id="tv-player" class="tv-video" muted playsinline preload="none" aria-hidden="true" tabindex="-1"></video>
               <div id="tv-stream-error" class="tv-stream-error" role="status" hidden>Video stream error, server stopped responding. Check your internet connection.</div>
             </div>
           </div>
@@ -1220,14 +1252,6 @@
       })();
     </script>
     <script>
-      // Page reveal stays active; the preserved canvas animation above is inert.
-      window.requestAnimationFrame(function () {
-        document.body.classList.add("is-ready");
-        window.setTimeout(function () {
-          document.body.classList.add("is-tv-intro-done");
-        }, 1500);
-      });
-
       (function () {
         const hlsUrl = "{{ hls_url|default_if_none:''|escapejs }}";
         const playerLayout = document.getElementById("player-layout");
@@ -1235,9 +1259,7 @@
         const toggleButton = document.getElementById("tv-toggle");
         const closeButton = document.getElementById("tv-close");
         const video = document.getElementById("tv-player");
-        const background = document.getElementById("stream-background");
         const videoShell = panel.querySelector(".tv-video-shell");
-        const mirror = document.getElementById("stream-background-mirror");
         const streamError = document.getElementById("tv-stream-error");
         const retryDelays = [2, 3, 7, 14, 21, 35, 42, 49, 56, 63, 70];
         let retryIndex = 0;
@@ -1247,12 +1269,6 @@
         let streamReloading = false;
         let streamFailed = false;
         let disposed = false;
-
-        let mirrorContext = null;
-        let mirrorFrame = 0;
-        let mirrorUsesVideoFrames = false;
-        let mirroring = false;
-        let lastMirrorDraw = 0;
 
         let hlsInstance = null;
         let hasLoadedStream = false;
@@ -1267,24 +1283,71 @@
         }
         function setDrawer(drawer) {
           leftDrawer = drawer;
-          const space = desktopQuery.matches ? (drawer ? 570 : 120) : 0;
+          const space = desktopQuery.matches ? (drawer ? 570 : 136) : 0;
           playerLayout.style.setProperty("--desktop-side-space", space + "px");
           queuePanels()?.setSpace(space);
         }
-        function syncTvAnchor() {
-          if (!desktopQuery.matches) playerLayout.style.setProperty("--mobile-queue-height", document.getElementById("player-card").offsetHeight + "px");
+        const brand = document.getElementById("brand");
+        const logoSlot = document.getElementById("logo-slot");
+        const logoHome = brand.parentElement;
+        const page = document.querySelector(".page");
+        const viewportProbe = document.createElement("div");
+        viewportProbe.style.cssText = "position:fixed;height:100svh;width:0;visibility:hidden;pointer-events:none";
+        document.body.appendChild(viewportProbe);
+        const placementElements = [brand, toggleButton, ...document.querySelectorAll(".notify-row > a")];
+        const placements = new Map();
+        const placementAnimations = new Map();
+        function settlePlacements() {
+          placementElements.forEach(element => {
+            const previous = placements.get(element);
+            const running = placementAnimations.get(element);
+            const presented = element.getBoundingClientRect();
+            running?.cancel();
+            const after = element.getBoundingClientRect();
+            const before = running && previous && after.width && after.height ? {
+              left: previous.left + presented.left - after.left, top: previous.top + presented.top - after.top,
+              width: presented.width * previous.width / after.width, height: presented.height * previous.height / after.height
+            } : previous;
+            if (before && after.width && after.height && document.body.classList.contains("is-logo-docked") &&
+                !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+              const dx = before.left - after.left, dy = before.top - after.top;
+              if (Math.abs(dx) + Math.abs(dy) + Math.abs(before.width - after.width) > .5) {
+                element.style.transformOrigin = "top left";
+                const motion = element.animate([
+                  {transform: "translate(" + dx + "px," + dy + "px) scale(" + before.width / after.width + "," + before.height / after.height + ")"},
+                  {transform: "translate(0,0) scale(1,1)"}
+                ], {duration: 600, easing: "cubic-bezier(.4,0,.2,1)"});
+                placementAnimations.set(element, motion);
+                motion.finished.catch(() => undefined).then(() => {
+                  if (placementAnimations.get(element) === motion) { placementAnimations.delete(element); motion.cancel(); }
+                });
+              }
+            }
+            placements.set(element, after);
+          });
         }
+        function syncTvAnchor() { syncHeight(); }
         function syncHeight() {
-          const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-          const top = document.getElementById("player-card").getBoundingClientRect().top;
-          const viewportTop = window.visualViewport ? window.visualViewport.offsetTop : 0;
-          const visibleHeight = Math.max(0, Math.floor(viewportHeight - Math.max(0, top - viewportTop) - 24));
-          const height = Math.max(260, visibleHeight);
+          const desktop = desktopQuery.matches;
+          const home = desktop ? logoHome : logoSlot;
+          if (brand.parentElement !== home) home.appendChild(brand);
+          const style = window.getComputedStyle(page);
+          const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+          // svh is stable when the mobile address bar moves. A keyboard may shrink it.
+          const stableHeight = viewportProbe.getBoundingClientRect().height || window.innerHeight;
+          const viewportHeight = desktop ? window.innerHeight : Math.min(stableHeight, window.visualViewport?.height || stableHeight);
+          const reserve = desktop ? 0 : 112;
+          const available = Math.max(120, Math.floor(viewportHeight - padding - reserve - 2));
+          const tvHeight = !desktop && wantsTv ? Math.max(120, Math.min(Math.round((Math.min(620, window.innerWidth - 28) - 42) * 9 / 16 + 78), Math.floor(available * .44))) : 0;
+          const height = Math.max(96, available - tvHeight - (tvHeight ? 14 : 0));
+          playerLayout.style.setProperty("--dock-reserve", reserve + "px");
+          playerLayout.style.setProperty("--mobile-tv-height", tvHeight + "px");
+          playerLayout.style.setProperty("--mobile-content-height", height + tvHeight + (tvHeight ? 14 : 0) + 2 + "px");
           playerLayout.style.setProperty("--queue-height", height + "px");
           frame.style.height = height + "px";
           frame.style.maxHeight = "none";
-          syncTvAnchor();
-          queuePanels()?.setVisibleHeight?.(visibleHeight);
+          queuePanels()?.setVisibleHeight?.(height);
+          settlePlacements();
         }
         function syncLayout() {
           if (desktopQuery.matches && queuePanels()?.current()) closeTv();
@@ -1292,6 +1355,7 @@
           setDrawer(leftDrawer);
           syncHeight();
         }
+
         function finishTvMotion() {
           if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return Promise.resolve();
           return new Promise(resolve => window.setTimeout(resolve, 620));
@@ -1308,8 +1372,8 @@
         window.addEventListener("resize", syncLayout, {passive: true});
         window.visualViewport?.addEventListener("resize", syncHeight, {passive: true});
         if (window.ResizeObserver) {
-          new ResizeObserver(syncHeight).observe(document.querySelector(".brand"));
-          new ResizeObserver(syncTvAnchor).observe(document.getElementById("player-card"));
+          new ResizeObserver(syncHeight).observe(page);
+          
         }
         syncLayout();
         window.setTimeout(syncHeight, 1200);
@@ -1320,61 +1384,6 @@
 
         function canUseHlsJs() {
           return Boolean(window.Hls && window.Hls.isSupported());
-        }
-
-        // Mirror decoded frames only while the single video is in the TV panel.
-        // The capped canvas size/frame rate keeps the background inexpensive.
-        function renderBackgroundMirror(now) {
-          mirrorFrame = 0;
-          if (!mirroring) return;
-          if (!document.hidden && video.readyState >= 2 && video.videoWidth && video.videoHeight &&
-              (!lastMirrorDraw || now - lastMirrorDraw >= 1000 / 24)) {
-            const scale = Math.min(1, 1920 / Math.max(window.innerWidth, window.innerHeight));
-            const width = Math.max(1, Math.round(window.innerWidth * scale));
-            const height = Math.max(1, Math.round(window.innerHeight * scale));
-            if (mirror.width !== width || mirror.height !== height) {
-              mirror.width = width; mirror.height = height;
-            }
-            const cropWidth = video.videoWidth / 2;
-            const cropHeight = video.videoHeight / 2;
-            const cover = Math.max(width / cropWidth, height / cropHeight);
-            const drawWidth = cropWidth * cover;
-            const drawHeight = cropHeight * cover;
-            mirrorContext.drawImage(video, video.videoWidth / 4, video.videoHeight / 4, cropWidth, cropHeight,
-              (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
-            lastMirrorDraw = now;
-          }
-          mirrorUsesVideoFrames = typeof video.requestVideoFrameCallback === "function";
-          mirrorFrame = mirrorUsesVideoFrames ? video.requestVideoFrameCallback(renderBackgroundMirror) :
-            window.requestAnimationFrame(renderBackgroundMirror);
-        }
-
-        function startBackgroundMirror() {
-          if (mirroring || disposed || streamFailed || streamReloading) return;
-          mirrorContext = mirrorContext || mirror.getContext("2d", {alpha: false, desynchronized: true});
-          if (!mirrorContext) return;
-          mirroring = true; lastMirrorDraw = 0;
-          renderBackgroundMirror(performance.now());
-          background.classList.add("is-mirroring");
-        }
-
-        function stopBackgroundMirror() {
-          mirroring = false;
-          if (mirrorFrame) {
-            if (mirrorUsesVideoFrames) video.cancelVideoFrameCallback(mirrorFrame);
-            else window.cancelAnimationFrame(mirrorFrame);
-          }
-          mirrorFrame = 0;
-          background.classList.remove("is-mirroring");
-        }
-
-        function showVideoInBackground() {
-          video.muted = true;
-          video.controls = false;
-          video.tabIndex = -1;
-          video.setAttribute("aria-hidden", "true");
-          if (video.parentElement !== background) background.appendChild(video);
-          stopBackgroundMirror();
         }
 
         function clearStreamWatchdog() {
@@ -1414,8 +1423,6 @@
           streamGeneration++;
           pendingPlayAttempt = false;
           clearStreamWatchdog();
-          stopBackgroundMirror();
-          background.classList.remove("is-ready");
           video.pause();
           if (hlsInstance) hlsInstance.stopLoad();
           if (retryIndex >= retryDelays.length) {
@@ -1435,13 +1442,12 @@
             streamReloading = false;
             pendingPlayAttempt = true;
             ensureStream();
-            if (panel.classList.contains("is-open") && !streamReloading && !streamFailed) startBackgroundMirror();
             void tryPlayLive();
           }, delay);
         }
 
         function ensureStream() {
-          if (disposed || streamFailed || streamReloading || hasLoadedStream || !hlsUrl) return;
+          if (disposed || streamFailed || streamReloading || hasLoadedStream || !hlsUrl || !wantsTv) return;
           hasLoadedStream = true;
           streamGeneration++;
           try {
@@ -1507,7 +1513,7 @@
         }
 
         async function tryPlayLive() {
-          if (disposed || streamFailed || streamReloading || !hasLoadedStream) return false;
+          if (disposed || streamFailed || streamReloading || !hasLoadedStream || !wantsTv) return false;
           const generation = streamGeneration;
           try {
             video.muted = !panel.classList.contains("is-open");
@@ -1537,7 +1543,7 @@
           panel.setAttribute("aria-hidden", "false");
           panel.removeAttribute("inert");
           syncTvToggle(true);
-          startBackgroundMirror();
+          syncHeight();
           videoShell.appendChild(video);
           video.controls = !streamFailed;
           video.tabIndex = 0;
@@ -1564,11 +1570,12 @@
           panel.setAttribute("inert", "");
           syncTvToggle(false);
 
-          showVideoInBackground();
-          if (hasLoadedStream) void tryPlayLive();
+          pendingPlayAttempt = false;
+          clearStreamWatchdog();
+          video.pause();
+          syncHeight();
         }
 
-        showVideoInBackground();
         video.addEventListener("playing", function () {
           if (disposed || streamFailed || streamReloading || !hasLoadedStream) return;
           const generation = streamGeneration;
@@ -1577,7 +1584,6 @@
             retryIndex = 0;
             streamError.hidden = true;
             videoShell.classList.remove("is-stream-error");
-            background.classList.add("is-ready");
             armStreamWatchdog(2000);
           };
           if (typeof video.requestVideoFrameCallback === "function") video.requestVideoFrameCallback(reveal);
@@ -1602,7 +1608,6 @@
           disposed = true;
           window.clearTimeout(retryTimer);
           retryTimer = 0;
-          stopBackgroundMirror();
           resetStreamSource();
         });
         video.addEventListener("volumechange", function () {
@@ -1641,11 +1646,66 @@
             void tryPlayLive();
           }
         });
-        pendingPlayAttempt = true;
-        ensureStream();
-        void tryPlayLive();
       })();
 
+    </script>
+    <script>
+      (async function () {
+        const logo = document.getElementById("brand-logo");
+        const brand = document.getElementById("brand");
+        const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        const background = document.getElementById("visualizer-background");
+        function reveal() {
+          document.body.classList.add("is-logo-docked", "is-ready", "is-tv-intro-done");
+          background.src = background.dataset.src;
+          window.dispatchEvent(new Event("furatic:intro-complete"));
+        }
+        window.addEventListener("message", function (event) {
+          if (event.source === background.contentWindow && event.origin === window.location.origin &&
+              event.data?.type === "furatic:visualizer-ready") document.getElementById("stream-background").classList.add("is-ready");
+        });
+        await Promise.race([logo.decode?.().catch(() => undefined), new Promise(resolve => window.setTimeout(resolve, 2500))]);
+        if (reduced || typeof logo.animate !== "function") { reveal(); return; }
+        const visual = logo.cloneNode(true);
+        visual.removeAttribute("id"); visual.setAttribute("aria-hidden", "true"); visual.className = "logo-intro";
+        const width = Math.min(440, window.innerWidth * .76);
+        const height = width * (logo.naturalHeight / logo.naturalWidth || .33);
+        Object.assign(visual.style, {width: width + "px", height: height + "px",
+          left: (window.innerWidth - width) / 2 + "px", top: (window.innerHeight - height) / 2 + "px"});
+        document.body.appendChild(visual);
+        const entrance = visual.animate([
+          {opacity: 0, filter: "blur(18px)", transform: "scale(.94)"},
+          {opacity: 1, filter: "blur(0px)", transform: "scale(1.025)", offset: .8},
+          {opacity: 1, filter: "blur(0px)", transform: "scale(1)"}
+        ], {duration: 900, easing: "cubic-bezier(.22,1,.36,1)", fill: "both"});
+        await entrance.finished.catch(() => undefined);
+        await new Promise(resolve => window.setTimeout(resolve, 300));
+        entrance.cancel();
+        let flight = null, resized = false;
+        const retarget = () => {
+          if (!flight) return;
+          const current = visual.getBoundingClientRect();
+          resized = true; flight.cancel();
+          Object.assign(visual.style, {left: current.left + "px", top: current.top + "px", width: current.width + "px", height: current.height + "px", transform: "none"});
+        };
+        window.addEventListener("resize", retarget);
+        do {
+          resized = false;
+          await new Promise(resolve => window.requestAnimationFrame(resolve));
+          const from = visual.getBoundingClientRect(), to = brand.getBoundingClientRect();
+          flight = visual.animate([
+            {transform: "translate(0,0) scale(1)"},
+            {transform: "translate(" + (to.left + to.width / 2 - from.left - from.width / 2) + "px," +
+              (to.top + to.height / 2 - from.top - from.height / 2) + "px) scale(" + to.width / from.width + ")"}
+          ], {duration: 1100, easing: "cubic-bezier(.4,0,.2,1)", fill: "both"});
+          await flight.finished.catch(() => undefined);
+        } while (resized);
+        window.removeEventListener("resize", retarget);
+        reveal(); visual.remove(); flight?.cancel();
+      })();
+    </script>
+
+    <script>
       (function () {
         const container = document.getElementById("event-notifications");
         const endpoint = "/api/notifications/";
@@ -1805,8 +1865,10 @@
       (function () {
         const key = "furatic-rules-v1";
         const modal = document.getElementById("furatic-first-visit");
-        if (!localStorage.getItem(key)) modal.hidden = false;
-        else modal.style.display = "none";
+        modal.style.display = "none";
+        const showRules = function () { if (!localStorage.getItem(key)) { modal.hidden = false; modal.style.display = "grid"; } };
+        if (document.body.classList.contains("is-logo-docked")) showRules();
+        else window.addEventListener("furatic:intro-complete", showRules, {once: true});
         document.getElementById("furatic-rules-accept").addEventListener("click", function () { localStorage.setItem(key, "accepted"); modal.style.display = "none"; modal.hidden = true; });
       }());
     </script>
