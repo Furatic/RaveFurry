@@ -44,10 +44,72 @@
         inset: 0;
         width: 100%;
         height: 100%;
-        display: block;
+        display: none;
         z-index: 0;
         background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg) 56%, var(--bg-bottom) 100%);
         transform: translateZ(0);
+      }
+
+      .background-gradient,
+      .stream-background {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 0;
+        pointer-events: none;
+      }
+
+      .background-gradient {
+        background:
+          radial-gradient(ellipse at 74% 12%, rgba(26,60,105,0.34), transparent 55%),
+          radial-gradient(ellipse at 12% 76%, rgba(12,28,52,0.20), transparent 54%),
+          linear-gradient(155deg, #0b101a 0%, #060910 48%, #03050a 100%);
+      }
+
+      .stream-background {
+        overflow: hidden;
+        opacity: 0;
+        transform: scale(1.035);
+        filter: blur(14px);
+        transition:
+          opacity 1600ms cubic-bezier(.22,1,.36,1),
+          transform 2400ms cubic-bezier(.22,1,.36,1),
+          filter 2000ms cubic-bezier(.22,1,.36,1);
+      }
+
+      .stream-background.is-ready { opacity: 1; transform: scale(1); filter: blur(0); }
+
+      .stream-background > canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: none;
+      }
+
+      .stream-background.is-mirroring > canvas { display: block; }
+
+      .stream-background > .tv-video {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        max-width: none;
+        max-height: none;
+        aspect-ratio: auto;
+        object-fit: cover;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        background: transparent;
+      }
+
+      .stream-background::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(180deg, rgba(3,5,10,0.18), rgba(3,5,10,0.46));
       }
 
       .noise,
@@ -706,6 +768,7 @@
       #tv-close svg { width: 20px; height: 20px; }
 
       @media (prefers-reduced-motion: reduce) {
+        .stream-background { transform: none; filter: none; transition: opacity 200ms ease; }
         .player-layout .player-card, .player-layout .tv-panel { transition: none; }
         .player-layout::before, #queue-player-frame { transition: none; }
         .reveal-stage,
@@ -724,7 +787,9 @@
     </style>
   </head>
   <body>
-    <canvas id="aurora" aria-hidden="true"></canvas>
+    <canvas id="aurora" aria-hidden="true" hidden></canvas>
+    <div class="background-gradient" aria-hidden="true"></div>
+    <div class="stream-background" id="stream-background" aria-hidden="true"><canvas id="stream-background-mirror" aria-hidden="true"></canvas></div>
     <div class="noise" aria-hidden="true"></div>
     <div class="vignette" aria-hidden="true"></div>
     <div class="event-notifications" id="event-notifications" aria-live="polite" aria-atomic="false"></div>
@@ -817,7 +882,7 @@
               <button class="mini-button" id="tv-close" type="button" aria-label="Close live stream"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
             </div>
             <div class="tv-video-shell">
-              <video id="tv-player" class="tv-video" controls playsinline preload="none"></video>
+              <video id="tv-player" class="tv-video" autoplay muted playsinline preload="auto" aria-hidden="true" tabindex="-1"></video>
             </div>
           </div>
         </div>
@@ -825,7 +890,7 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
-    <script>
+    <script type="text/plain" id="furatic-aurora-animation">
       (function () {
         const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         const canvas = document.getElementById("aurora");
@@ -1094,6 +1159,15 @@
           }, 1500);
         });
       })();
+    </script>
+    <script>
+      // Page reveal stays active; the preserved canvas animation above is inert.
+      window.requestAnimationFrame(function () {
+        document.body.classList.add("is-ready");
+        window.setTimeout(function () {
+          document.body.classList.add("is-tv-intro-done");
+        }, 1500);
+      });
 
       (function () {
         const hlsUrl = "{{ hls_url|default_if_none:''|escapejs }}";
@@ -1102,6 +1176,15 @@
         const toggleButton = document.getElementById("tv-toggle");
         const closeButton = document.getElementById("tv-close");
         const video = document.getElementById("tv-player");
+        const background = document.getElementById("stream-background");
+        const videoShell = panel.querySelector(".tv-video-shell");
+        const mirror = document.getElementById("stream-background-mirror");
+
+        let mirrorContext = null;
+        let mirrorFrame = 0;
+        let mirrorUsesVideoFrames = false;
+        let mirroring = false;
+        let lastMirrorDraw = 0;
 
         let hlsInstance = null;
         let hasLoadedStream = false;
@@ -1164,6 +1247,58 @@
           return Boolean(window.Hls && window.Hls.isSupported());
         }
 
+        // Mirror decoded frames only while the single video is in the TV panel.
+        // The capped canvas size/frame rate keeps the background inexpensive.
+        function renderBackgroundMirror(now) {
+          mirrorFrame = 0;
+          if (!mirroring) return;
+          if (!document.hidden && video.readyState >= 2 && video.videoWidth && video.videoHeight &&
+              (!lastMirrorDraw || now - lastMirrorDraw >= 1000 / 24)) {
+            const scale = Math.min(1, 1920 / Math.max(window.innerWidth, window.innerHeight));
+            const width = Math.max(1, Math.round(window.innerWidth * scale));
+            const height = Math.max(1, Math.round(window.innerHeight * scale));
+            if (mirror.width !== width || mirror.height !== height) {
+              mirror.width = width; mirror.height = height;
+            }
+            const cover = Math.max(width / video.videoWidth, height / video.videoHeight);
+            const drawWidth = video.videoWidth * cover;
+            const drawHeight = video.videoHeight * cover;
+            mirrorContext.drawImage(video, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
+            lastMirrorDraw = now;
+          }
+          mirrorUsesVideoFrames = typeof video.requestVideoFrameCallback === "function";
+          mirrorFrame = mirrorUsesVideoFrames ? video.requestVideoFrameCallback(renderBackgroundMirror) :
+            window.requestAnimationFrame(renderBackgroundMirror);
+        }
+
+        function startBackgroundMirror() {
+          if (mirroring) return;
+          mirrorContext = mirrorContext || mirror.getContext("2d", {alpha: false, desynchronized: true});
+          if (!mirrorContext) return;
+          mirroring = true; lastMirrorDraw = 0;
+          renderBackgroundMirror(performance.now());
+          background.classList.add("is-mirroring");
+        }
+
+        function stopBackgroundMirror() {
+          mirroring = false;
+          if (mirrorFrame) {
+            if (mirrorUsesVideoFrames) video.cancelVideoFrameCallback(mirrorFrame);
+            else window.cancelAnimationFrame(mirrorFrame);
+          }
+          mirrorFrame = 0;
+          background.classList.remove("is-mirroring");
+        }
+
+        function showVideoInBackground() {
+          video.muted = true;
+          video.controls = false;
+          video.tabIndex = -1;
+          video.setAttribute("aria-hidden", "true");
+          if (video.parentElement !== background) background.appendChild(video);
+          stopBackgroundMirror();
+        }
+
         function ensureStream() {
           if (hasLoadedStream || !hlsUrl) {
             return;
@@ -1223,12 +1358,8 @@
         }
 
         async function tryPlayLive() {
-          if (!panel.classList.contains("is-open")) {
-            return false;
-          }
-
           try {
-            video.muted = false;
+            video.muted = !panel.classList.contains("is-open");
             await video.play();
             pendingPlayAttempt = false;
             return true;
@@ -1248,6 +1379,11 @@
           panel.setAttribute("aria-hidden", "false");
           panel.removeAttribute("inert");
           syncTvToggle(true);
+          startBackgroundMirror();
+          videoShell.appendChild(video);
+          video.controls = true;
+          video.tabIndex = 0;
+          video.removeAttribute("aria-hidden");
 
           hasOpenedTvOnce = true;
           pendingPlayAttempt = true;
@@ -1261,16 +1397,29 @@
         }
 
         function closeTv() {
+          video.muted = true;
           wantsTv = false;
-          pendingPlayAttempt = false;
+          pendingPlayAttempt = true;
           playerLayout.classList.remove("is-tv-open");
           panel.classList.remove("is-open");
           panel.setAttribute("aria-hidden", "true");
           panel.setAttribute("inert", "");
           syncTvToggle(false);
 
-          video.pause();
+          showVideoInBackground();
+          if (hasLoadedStream) void tryPlayLive();
         }
+
+        showVideoInBackground();
+        video.addEventListener("playing", function () {
+          if (background.classList.contains("is-ready")) return;
+          const reveal = function () { background.classList.add("is-ready"); };
+          if (typeof video.requestVideoFrameCallback === "function") video.requestVideoFrameCallback(reveal);
+          else window.requestAnimationFrame(reveal);
+        });
+        video.addEventListener("volumechange", function () {
+          if (!panel.classList.contains("is-open") && !video.muted) video.muted = true;
+        });
 
         if (!hlsUrl || (!canUseNativeHls() && !canUseHlsJs())) {
           toggleButton.disabled = true;
@@ -1294,16 +1443,19 @@
         });
 
         video.addEventListener("loadedmetadata", function () {
-          if (panel.classList.contains("is-open") && pendingPlayAttempt) {
+          if (pendingPlayAttempt) {
             void tryPlayLive();
           }
         });
 
         video.addEventListener("canplay", function () {
-          if (panel.classList.contains("is-open") && pendingPlayAttempt) {
+          if (pendingPlayAttempt) {
             void tryPlayLive();
           }
         });
+        pendingPlayAttempt = true;
+        ensureStream();
+        void tryPlayLive();
       })();
 
       (function () {
