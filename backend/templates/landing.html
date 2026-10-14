@@ -118,8 +118,8 @@
 
       .brand > img.reveal-stage {
         display: block;
-        width: min(100%, 540px);
-        max-width: 35%;
+        width: min(100%, 405px);
+        max-width: 26.25%;
         height: auto;
         margin-top: -10px;
         filter:
@@ -322,7 +322,7 @@
 
       /* Transparent iframe gutters let only Now Playing cross the unchanged
          player-card edge. The framed queue adds the same space back as padding. */
-      #queue-player-frame { width: calc(100% + 40px); max-width: none; margin-left: -20px; margin-right: -20px; }
+      #queue-player-frame { width: calc(100% + 40px); max-width: none; margin-left: -20px; margin-right: -20px; transition: height 400ms cubic-bezier(.22,1,.36,1); }
       
       .tv-button {
         background: rgba(255,255,255,0.06);
@@ -470,6 +470,8 @@
         right: 18px;
         z-index: 40;
         width: min(370px, calc(100vw - 28px));
+        max-height: calc(100dvh - 36px);
+        overflow-y: auto;
         display: grid;
         gap: 10px;
         pointer-events: none;
@@ -562,9 +564,8 @@
         color: var(--muted);
         font-size: 13px;
         line-height: 1.3;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        white-space: normal;
+        overflow-wrap: anywhere;
       }
 
       @media (max-width: 620px) {
@@ -658,7 +659,52 @@
         }
       }
 
+      @media (min-width: 1581px) {
+        .player-layout {
+          left: 50%; margin: 0; translate: -50% 0; gap: 0;
+          width: min(calc(100vw - 56px), calc(620px + var(--desktop-side-space, 76px)));
+          transition: width 520ms cubic-bezier(.22,1,.36,1);
+        }
+        .player-layout::before {
+          content: ""; flex: 0 0 var(--desktop-side-space, 76px);
+          transition: flex-basis 520ms cubic-bezier(.22,1,.36,1);
+        }
+        .player-layout .player-card {
+          width: calc(100% - var(--desktop-side-space, 76px));
+          flex-basis: calc(100% - var(--desktop-side-space, 76px));
+          transition: width 520ms cubic-bezier(.22,1,.36,1), flex-basis 520ms cubic-bezier(.22,1,.36,1),
+            opacity 760ms cubic-bezier(.22,1,.36,1), filter 1080ms cubic-bezier(.22,1,.36,1), transform 520ms cubic-bezier(.22,1,.36,1), box-shadow 220ms ease;
+        }
+        .player-layout.is-tv-open { width: min(calc(100vw - 56px), 1640px); }
+        .player-layout.is-tv-open .player-card {
+          width: calc((100% - var(--desktop-side-space, 76px) - 14px) * .4);
+          flex-basis: calc((100% - var(--desktop-side-space, 76px) - 14px) * .4);
+        }
+        body.is-ready .player-layout.is-tv-open .player-card { transform: scale(1); }
+        #queue-player-frame {
+          width: calc(100% + 40px + var(--desktop-side-space, 76px));
+          margin-left: calc(-20px - var(--desktop-side-space, 76px));
+          transition: width 520ms cubic-bezier(.22,1,.36,1), margin-left 520ms cubic-bezier(.22,1,.36,1), height 400ms cubic-bezier(.22,1,.36,1);
+        }
+        .player-layout .tv-panel {
+          margin-left: 0; min-width: 0; max-width: none; height: var(--queue-height, min(64.6vh, 748px));
+          transition: flex-basis 520ms cubic-bezier(.22,1,.36,1), width 520ms cubic-bezier(.22,1,.36,1),
+            margin-left 520ms cubic-bezier(.22,1,.36,1), padding 520ms cubic-bezier(.22,1,.36,1),
+            opacity 320ms cubic-bezier(.22,1,.36,1), transform 620ms cubic-bezier(.22,1,.36,1), height 400ms cubic-bezier(.22,1,.36,1);
+        }
+        .player-layout.is-tv-open .tv-panel {
+          flex: 0 0 calc((100% - var(--desktop-side-space, 76px) - 14px) * .6);
+          width: calc((100% - var(--desktop-side-space, 76px) - 14px) * .6);
+          min-width: 0; max-width: none; margin-left: 14px;
+          height: var(--queue-height, min(64.6vh, 748px));
+        }
+      }
+      #tv-close { width: 46px; padding: 0; }
+      #tv-close svg { width: 20px; height: 20px; }
+
       @media (prefers-reduced-motion: reduce) {
+        .player-layout .player-card, .player-layout .tv-panel { transition: none; }
+        .player-layout::before, #queue-player-frame { transition: none; }
         .reveal-stage,
         .notify-button,
         .tv-button,
@@ -762,10 +808,10 @@
             >
           </button>
         
-          <div class="tv-panel" id="tv-panel" aria-hidden="true">
+          <div class="tv-panel" id="tv-panel" aria-hidden="true" inert>
             <div class="tv-panel-head">
-              <h2>Live TV feed</h2>
-              <button class="mini-button" id="tv-close" type="button">Close</button>
+              <h2>Live stream</h2>
+              <button class="mini-button" id="tv-close" type="button" aria-label="Close live stream"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
             </div>
             <div class="tv-video-shell">
               <video id="tv-player" class="tv-video" controls playsinline preload="none"></video>
@@ -1058,6 +1104,54 @@
         let hasLoadedStream = false;
         let pendingPlayAttempt = false;
         let hasOpenedTvOnce = false;
+        let wantsTv = false;
+        let leftDrawer = null;
+        const frame = document.getElementById("queue-player-frame");
+        const desktopQuery = window.matchMedia("(min-width: 1581px)");
+        function queuePanels() {
+          try { return frame.contentWindow.furaticQueuePanels; } catch (_error) { return null; }
+        }
+        function setDrawer(drawer) {
+          leftDrawer = drawer;
+          const space = desktopQuery.matches ? (drawer ? 530 : 76) : 0;
+          playerLayout.style.setProperty("--desktop-side-space", space + "px");
+          queuePanels()?.setSpace(space);
+        }
+        function syncHeight() {
+          const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+          const top = document.getElementById("player-card").getBoundingClientRect().top;
+          const viewportTop = window.visualViewport ? window.visualViewport.offsetTop : 0;
+          const visibleHeight = Math.max(0, Math.floor(viewportHeight - Math.max(0, top - viewportTop) - 24));
+          const height = Math.max(260, visibleHeight);
+          playerLayout.style.setProperty("--queue-height", height + "px");
+          frame.style.height = height + "px";
+          frame.style.maxHeight = "none";
+          queuePanels()?.setVisibleHeight?.(visibleHeight);
+        }
+        function syncLayout() {
+          if (desktopQuery.matches && queuePanels()?.current()) closeTv();
+          queuePanels()?.setDesktop(desktopQuery.matches);
+          setDrawer(leftDrawer);
+          syncHeight();
+        }
+        function finishTvMotion() {
+          if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return Promise.resolve();
+          return new Promise(resolve => window.setTimeout(resolve, 620));
+        }
+        window.furaticPlayerPanels = {
+          setDrawer, syncLayout,
+          beforeDrawer: async function () {
+            const wasOpen = panel.classList.contains("is-open");
+            closeTv();
+            if (wasOpen) await finishTvMotion();
+          },
+        };
+        frame.addEventListener("load", syncLayout);
+        window.addEventListener("resize", syncLayout, {passive: true});
+        window.visualViewport?.addEventListener("resize", syncHeight, {passive: true});
+        if (window.ResizeObserver) new ResizeObserver(syncHeight).observe(document.querySelector(".brand"));
+        syncLayout();
+        window.setTimeout(syncHeight, 1200);
 
         function canUseNativeHls() {
           return video.canPlayType("application/vnd.apple.mpegurl");
@@ -1140,12 +1234,16 @@
           }
         }
 
-        function openTv() {
+        async function openTv() {
+          wantsTv = true;
+          if (desktopQuery.matches) await queuePanels()?.close();
+          if (!wantsTv) return;
           const shouldJumpToLive = hasOpenedTvOnce;
 
           playerLayout.classList.add("is-tv-open");
           panel.classList.add("is-open");
           panel.setAttribute("aria-hidden", "false");
+          panel.removeAttribute("inert");
           syncTvToggle(true);
 
           hasOpenedTvOnce = true;
@@ -1160,10 +1258,12 @@
         }
 
         function closeTv() {
+          wantsTv = false;
           pendingPlayAttempt = false;
           playerLayout.classList.remove("is-tv-open");
           panel.classList.remove("is-open");
           panel.setAttribute("aria-hidden", "true");
+          panel.setAttribute("inert", "");
           syncTvToggle(false);
 
           video.pause();
@@ -1179,10 +1279,10 @@
         syncTvToggle(false);
 
         toggleButton.addEventListener("click", function () {
-          if (panel.classList.contains("is-open")) {
+          if (wantsTv || panel.classList.contains("is-open")) {
             closeTv();
           } else {
-            openTv();
+            void openTv();
           }
         });
 
@@ -1301,7 +1401,7 @@
             for (const notification of notifications) {
               const id = Number(notification.id || 0);
               latestNotificationId = Math.max(latestNotificationId, id);
-              showNotification(notification);
+              if (!String(notification.kind).startsWith("song_request_")) showNotification(notification);
             }
           } catch (_error) {
             // Silent retry. Notifications are non-critical UI.
