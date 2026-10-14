@@ -234,6 +234,23 @@ def afterhours_top_songs(_request: WSGIRequest) -> HttpResponse:
     return _disable_dynamic_page_cache(response)
 
 
+def afterhours_history(_request: WSGIRequest) -> HttpResponse:
+    """Return the fifty most recent plays, independently of the vote rankings."""
+    now = timezone.now()
+    try:
+        rows = models.PlaybackHistory.objects.filter(
+            ended_at__gte=now - datetime.timedelta(hours=12), ended_at__lte=now,
+        ).order_by("-ended_at", "-id")[:50]
+        response = JsonResponse({"songs": [{
+            "id": row.id, "artist": row.artist, "title": row.title,
+            "artworkUrl": row.artwork_url, "endedAt": row.ended_at.isoformat(),
+        } for row in rows]})
+    except DatabaseError:
+        logger.exception("could not read after-hours playback history")
+        response = JsonResponse({"message": "Recently played songs are temporarily unavailable."}, status=503)
+    return _disable_dynamic_page_cache(response)
+
+
 def site_mode_status(_request: WSGIRequest) -> HttpResponse:
     """Returns the current runtime-only public site mode."""
     return JsonResponse({"mode": site_mode.get_mode()})
