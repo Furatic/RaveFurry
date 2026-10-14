@@ -800,7 +800,9 @@
           transition: width 600ms cubic-bezier(.4,0,.2,1), margin-left 600ms cubic-bezier(.4,0,.2,1), height 400ms cubic-bezier(.22,1,.36,1);
         }
         .player-layout .tv-panel {
-          margin-left: 0; min-width: 0; max-width: none; height: auto;
+          margin-left: 0; min-width: 0; max-width: none;
+          height: calc(var(--queue-height, min(64.6vh, 748px)) + 2px);
+          grid-template-rows: minmax(0, 1fr);
           transition: flex-basis 520ms cubic-bezier(.22,1,.36,1), width 520ms cubic-bezier(.22,1,.36,1),
             margin-left 520ms cubic-bezier(.22,1,.36,1), padding 520ms cubic-bezier(.22,1,.36,1),
             opacity 320ms cubic-bezier(.22,1,.36,1), transform 620ms cubic-bezier(.22,1,.36,1), height 400ms cubic-bezier(.22,1,.36,1);
@@ -809,7 +811,15 @@
           flex: 0 0 calc((100% - var(--desktop-side-space, 120px) - 14px) * .6);
           width: calc((100% - var(--desktop-side-space, 120px) - 14px) * .6);
           min-width: 0; max-width: none; margin-left: 14px;
-          height: auto;
+          height: calc(var(--queue-height, min(64.6vh, 748px)) + 2px);
+        }
+        .tv-panel-head {
+          position: absolute; top: 16px; left: 16px; right: 16px; z-index: 1;
+        }
+        .tv-video-shell {
+          align-self: center; justify-self: center;
+          /* Center the fitted shell in the full panel and clear its header. */
+          width: min(100%, calc((var(--queue-height, min(64.6vh, 748px)) - 176px) * 16 / 9 + 26px));
         }
       }
       #tv-close { width: 46px; padding: 0; }
