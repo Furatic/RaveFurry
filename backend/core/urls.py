@@ -34,6 +34,7 @@ urlpatterns: List[Union[URLPattern, URLResolver]] = [
     path("visualizer/features.json", visualizer.features, name="visualizer-features"),
     path("", base.landing, name="base"),
     path("afterhours/", base.afterhours, name="afterhours"),
+    path("afterhours/top-songs/", base.afterhours_top_songs, name="afterhours-top-songs"),
     path("p/", musiq.embed, name="musiq"),
     path("musiq/", RedirectView.as_view(pattern_name="base", permanent=False)),
     path("lights/", lights.index, name="lights"),
