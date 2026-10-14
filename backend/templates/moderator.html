@@ -27,6 +27,8 @@
         box-sizing: border-box;
       }
 
+      [hidden] { display: none !important; }
+
       html,
       body {
         width: 100%;
@@ -68,7 +70,7 @@
       .hero {
         padding: 18px;
         display: grid;
-        grid-template-columns: 1fr auto;
+        grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
         gap: 14px;
         align-items: center;
       }
@@ -85,16 +87,17 @@
 
       .hero-actions {
         display: flex;
+        min-width: 0;
         justify-content: flex-end;
         align-items: center;
       }
       
       .toolbar {
         display: flex;
-        flex-wrap: nowrap;
+        flex-wrap: wrap;
         align-items: center;
         gap: 10px;
-        overflow-x: auto;
+        max-width: 100%;
       }
 
       .button,
@@ -166,19 +169,21 @@
 
       .layout {
         display: grid;
-        grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.95fr);
-        gap: 77px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
         align-items: start;
       }
 
       .stack {
         display: grid;
+        min-width: 0;
         gap: 16px;
       }
 
       .section {
         padding: 18px;
         display: grid;
+        min-width: 0;
         gap: 14px;
       }
 
@@ -207,6 +212,9 @@
         background: rgba(255, 255, 255, 0.05);
         color: rgba(255, 255, 255, 0.94);
         font-size: 13px;
+        max-width: 100%;
+        min-width: 0;
+        overflow-wrap: anywhere;
       }
 
       .song-card,
@@ -219,11 +227,12 @@
         border: 1px solid var(--line);
         background: rgba(255, 255, 255, 0.045);
       }
-      body.song-only .layout > .stack:nth-child(2),
+      body.song-only .layout > .stack:nth-child(2) > .section:not(#review-section),
       body.song-only #event-mode-button,
       body.song-only #closing-mode-button,
       body.song-only #afterhours-mode-button,
       body.song-only #audit-section { display: none !important; }
+      body.song-only .layout { grid-template-columns: minmax(0, 1fr); }
       mark.lyric-profanity { background:#f5c542; color:#111; padding:0 2px; }
       mark.lyric-slur { background:#d7193f; color:#fff; padding:0 2px; }
 
@@ -256,19 +265,29 @@
       }
 
       .queue-item {
-        grid-template-columns: minmax(260px, 0.9fr) minmax(420px, 1.35fr);
-        align-items: center;
+        grid-template-columns: minmax(0, 1fr);
+        align-items: start;
+        min-width: 0;
       }
       
       .queue-item .queue-actions {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(132px, 1fr));
+        display: flex;
+        flex-wrap: wrap;
         width: 100%;
+        min-width: 0;
+      }
+
+      .queue-item .queue-actions > button {
+        flex: 1 1 132px;
+        min-width: 0;
+        max-width: 100%;
+        white-space: normal;
+        overflow-wrap: anywhere;
       }
 
       .current-song-layout {
         display: grid;
-        grid-template-columns: 96px minmax(0, 1fr) auto;
+        grid-template-columns: 96px minmax(0, 1fr);
         gap: 18px;
         align-items: center;
       }
@@ -276,10 +295,13 @@
       .current-song-cover { width:96px; height:96px; border-radius:16px; object-fit:cover; background:rgba(255,255,255,.04); box-shadow:0 10px 28px rgba(0,0,0,.32); }
       
       .current-song-actions {
-        display: grid;
+        grid-column: 1 / -1;
+        display: flex;
+        flex-wrap: wrap;
         gap: 10px;
-        min-width: 170px;
+        min-width: 0;
       }
+      .current-song-actions > button { flex: 1 1 132px; min-width: 0; max-width: 100%; white-space: normal; }
       
       .queue-artist {
         color: var(--muted);
@@ -315,6 +337,7 @@
       input[type="search"],
       input[type="password"] {
         width: 100%;
+        min-width: 0;
         border: 1px solid var(--line);
         background: rgba(255, 255, 255, 0.06);
         color: var(--text);
@@ -460,6 +483,7 @@
       select,
       input[type="file"] {
         width: 100%;
+        min-width: 0;
         border: 1px solid var(--line);
         background: rgba(255, 255, 255, 0.06);
         color: var(--text);
@@ -487,9 +511,12 @@
 
       .field-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: start;
       }
 
       .field-label {
+        min-width: 0;
+        align-content: start;
         color: var(--muted);
         font-size: 13px;
       }
@@ -694,6 +721,74 @@
         font-size: 13px;
       }
 
+      .connection-overlay.server-down,
+      .connection-overlay.restored {
+        inset: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) auto auto;
+        width: min(380px, calc(100vw - 36px));
+        padding: 0;
+        background: none;
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+        pointer-events: none;
+      }
+
+      .connection-overlay.server-down .connection-card,
+      .connection-overlay.restored .connection-card {
+        width: 100%;
+        grid-template-columns: 36px minmax(0, 1fr);
+        justify-items: start;
+        gap: 5px 14px;
+        padding: 18px;
+        border-radius: 20px;
+        text-align: left;
+        background: rgba(8, 12, 26, 0.94);
+        box-shadow: 0 16px 50px rgba(0, 0, 0, 0.32);
+        -webkit-backdrop-filter: blur(20px);
+        backdrop-filter: blur(20px);
+        transform: translate3d(0, -12px, 0) scale(0.98);
+        filter: blur(4px);
+      }
+
+      .connection-overlay.visible.server-down .connection-card,
+      .connection-overlay.visible.restored .connection-card {
+        transform: translate3d(0, 0, 0) scale(1);
+        filter: blur(0);
+      }
+
+      .connection-overlay.server-down .connection-mark,
+      .connection-overlay.restored .connection-mark { width: 36px; height: 36px; grid-row: 1 / 4; }
+      .connection-overlay.server-down .connection-spinner,
+      .connection-overlay.restored .connection-spinner { width: 18px; height: 18px; }
+      .connection-overlay.server-down .connection-title,
+      .connection-overlay.restored .connection-title { font-size: 17px; line-height: 1.3; letter-spacing: -0.025em; }
+      .connection-overlay.server-down .connection-copy,
+      .connection-overlay.restored .connection-copy { font-size: 13px; }
+      .connection-overlay.server-down .connection-detail,
+      .connection-overlay.restored .connection-detail { min-height: 0; font-size: 12px; line-height: 1.5; }
+
+      .alert-preview {
+        position: fixed;
+        right: max(18px, env(safe-area-inset-right));
+        bottom: max(88px, env(safe-area-inset-bottom));
+        z-index: 99;
+        width: min(380px, calc(100vw - 36px));
+        padding: 18px 20px;
+        border: 1px solid rgba(0, 142, 248, 0.28);
+        border-radius: 20px;
+        background: rgba(8, 12, 26, 0.94);
+        box-shadow: 0 16px 50px rgba(0, 0, 0, 0.32);
+        -webkit-backdrop-filter: blur(20px);
+        backdrop-filter: blur(20px);
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transform: translate3d(0, 14px, 0) scale(0.98);
+        transition: opacity 480ms ease, visibility 480ms ease, transform 540ms cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .alert-preview.visible { opacity: 1; visibility: visible; transform: translate3d(0, 0, 0) scale(1); }
+      .alert-preview strong { display: block; margin-bottom: 7px; font-size: 15px; }
+      .alert-preview p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+
       @keyframes moderatorConnectionSpin {
         to {
           transform: rotate(360deg);
@@ -702,7 +797,8 @@
 
       @media (prefers-reduced-motion: reduce) {
         .connection-overlay,
-        .connection-card {
+        .connection-card,
+        .alert-preview {
           transition: none;
         }
 
@@ -778,6 +874,42 @@
           transform: translateY(-2px);
         }
       }
+
+      /* Retain the panel theme; add readable controls and bounded activity views. */
+      .bounded-activity-list { max-height: min(38vh, 420px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; transition: max-height 420ms cubic-bezier(.22,1,.36,1); }
+      .bounded-activity-list.is-expanded { max-height: min(66vh, 720px); }
+      .activity-expand { margin-top: 12px; }
+      .activity-expand span { display: inline-block; transition: transform 300ms ease; }
+      .activity-expand[aria-expanded="true"] span { transform: rotate(180deg); }
+      .account-editor { display: grid; gap: 14px; margin-bottom: 20px; }
+      .account-editor small, .account-role-option small, .account-access small, .account-card small { display: block; color: var(--muted); font-weight: normal; line-height: 1.5; }
+      .account-role-picker { border: 0; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .account-role-picker legend { grid-column: 1 / -1; font-size: .9rem; margin-bottom: 8px; }
+      .account-role-option { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1px solid var(--line); border-radius: 14px; cursor: pointer; transition: background 220ms ease, border-color 220ms ease, transform 220ms ease; }
+      .account-role-option:has(input:checked) { background: var(--panel-strong); border-color: rgba(255,255,255,.28); }
+      .account-role-option:active { transform: scale(.985); }
+      .account-role-option input { width: auto; flex: 0 0 auto; margin-top: 4px; }
+      .account-access { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+      input.account-switch { appearance: none; flex: 0 0 42px; width: 42px; height: 24px; border-radius: 999px; padding: 2px; background: var(--panel); position: relative; cursor: pointer; transition: background 240ms ease; }
+      input.account-switch::before { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; background: currentColor; border-radius: 50%; transition: transform 260ms cubic-bezier(.22,1,.36,1); }
+      input.account-switch:checked { background: rgba(255,255,255,.18); }
+      input.account-switch:checked::before { transform: translateX(18px); }
+      .account-card { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-items: start; }
+      .account-card-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; min-width: 0; }
+      .account-card-header > div, .account-access > span { min-width: 0; flex: 1 1 0; overflow-wrap: anywhere; }
+      .account-role-option > span { min-width: 0; overflow-wrap: anywhere; }
+      .account-role-picker, .account-editor, .account-role-controls { min-width: 0; }
+      .account-role-controls > button { flex: 1 1 132px; min-width: 0; max-width: 100%; white-space: normal; }
+      .account-editor .field-label > input { min-width: 0; min-height: 48px; }
+      .account-card .queue-actions > button { flex-basis: 160px; }
+      .account-role-controls { display: flex; gap: 6px; flex-wrap: wrap; }
+      .account-role-controls button[aria-pressed="true"] { background: var(--panel-strong); border-color: rgba(255,255,255,.3); }
+      .account-card[aria-busy="true"] { opacity: .7; transition: opacity 220ms ease; }
+      .activity-new { animation: activityReveal 320ms cubic-bezier(.22,1,.36,1) both; }
+      @keyframes activityReveal { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+      @media(max-width: 620px) { .account-role-picker { grid-template-columns: 1fr; } }
+      @media(prefers-reduced-motion: reduce) { .bounded-activity-list, .activity-expand span, input.account-switch, input.account-switch::before, .account-role-option { transition: none; } .activity-new { animation: none; } }
+
     </style>
   </head>
   <body>
@@ -823,19 +955,11 @@
                 <h2>Audit log</h2>
                 <div class="token"><span id="audit-count">0</span>&nbsp;recent</div>
               </div>
-              <div id="audit-list" class="stack">
+              <div id="audit-list" class="stack bounded-activity-list" tabindex="0" aria-label="Recent audit actions">
                 <div class="empty-state">No recent actions yet.</div>
               </div>
+              <button id="audit-expand" class="subtle activity-expand" type="button" aria-expanded="false" aria-controls="audit-list">Show 100 <span aria-hidden="true">⌄</span></button>
               <div class="manual-ban"><input id="history-search-input" type="search" list="codename-suggestions" placeholder="Search codename, IP, or song"><button id="history-search-button" type="button">Search</button></div>
-            </section>
-            <section class="panel section" id="review-section" hidden>
-              <div class="section-head"><h2>Needs manual review</h2><div class="token"><span id="review-count">0</span>&nbsp;held</div></div>
-              <div id="review-list" class="stack"></div>
-            </section>
-            <section class="panel section" id="moderator-accounts-section" hidden>
-              <div class="section-head"><h2>Moderator accounts</h2><div class="token">Administrator only</div></div>
-              <div class="account-form"><input id="account-username" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="Username"><input id="account-label" type="text" inputmode="text" autocomplete="off" placeholder="Account label"><input id="account-password" type="password" autocomplete="new-password" placeholder="Password"><label><input id="account-song-only" type="checkbox"> Song-only</label><label><input id="account-active" type="checkbox" checked> Active</label><button id="account-save" class="good" type="button">Add moderator</button></div>
-              <div id="moderator-accounts-list" class="stack"></div>
             </section>
           </div>
         
@@ -846,9 +970,10 @@
                 <div class="token"><span id="connected-ip-count">0</span>&nbsp;visible</div>
               </div>
 
-              <div id="connected-ip-list" class="stack">
+              <div id="connected-ip-list" class="stack bounded-activity-list" tabindex="0" aria-label="Connected IP activity">
                 <div class="empty-state">No IPs are visible in the current audit log.</div>
               </div>
+              <button id="connected-expand" class="subtle activity-expand" type="button" aria-expanded="false" aria-controls="connected-ip-list">Show 100 <span aria-hidden="true">⌄</span></button>
             </section>
 
             <section class="panel section">
@@ -1018,20 +1143,45 @@
                 <div class="empty-state">No blocklist files are installed.</div>
               </div>
             </section>
+            <section class="panel section" id="review-section" hidden>
+              <div class="section-head"><h2>Needs manual review</h2><div class="token"><span id="review-count">0</span>&nbsp;held</div></div>
+              <div id="review-list" class="stack"></div>
+            </section>
+            {% if is_admin %}
+            <section class="panel section" id="moderator-accounts-section" hidden>
+              <div class="section-head"><h2>Moderator accounts</h2><div class="token">Administrator only</div></div>
+              <p class="helper-text">Manage who can sign in, and which moderation tools they can use. Administrator access cannot be granted here.</p>
+              <form id="moderator-account-form" class="account-editor">
+                <div class="field-grid">
+                  <label class="field-label" for="account-username">Sign-in username<input id="account-username" type="text" maxlength="150" autocomplete="off" spellcheck="false" required></label>
+                  <label class="field-label" for="account-label">Display label<input id="account-label" type="text" maxlength="120" autocomplete="off" required><small>Shown in the moderation panel.</small></label>
+                </div>
+                <label class="field-label" for="account-password">Password<input id="account-password" type="password" autocomplete="new-password"><small id="account-password-help">Required for a new account. When editing, leave blank to keep its password.</small></label>
+                <fieldset class="account-role-picker"><legend>Moderation permissions</legend>
+                  <label class="account-role-option"><input type="radio" name="account-role" value="full" checked><span><strong>Full moderator</strong><small>Songs, review, IP bans, request settings, blocklists and event modes.</small></span></label>
+                  <label class="account-role-option"><input id="account-song-only" type="radio" name="account-role" value="songs"><span><strong>Song moderator</strong><small>Queue, skip, song details and review. No IP tools, settings or event modes.</small></span></label>
+                </fieldset>
+                <label class="account-access"><input id="account-active" class="account-switch" type="checkbox" checked><span><strong>Sign-in enabled</strong><small>Turn off to suspend access without deleting the account.</small></span></label>
+                <div class="queue-actions"><button id="account-save" class="good" type="submit">Add moderator</button><button id="account-cancel" class="subtle" type="button" hidden>Cancel edit</button></div>
+              </form>
+              <div id="moderator-accounts-list" class="stack"></div>
+            </section>
+            {% endif %}
           </div>
         </div>
       </div>
     </main>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="alert-preview" class="alert-preview" role="status" aria-live="polite" aria-hidden="true"></div>
     <dialog id="song-details-dialog" class="song-details-dialog"><div id="song-details-content"></div><button id="song-details-close" type="button">Close</button></dialog>
 
     <div
       id="connection-overlay"
       class="connection-overlay"
-      role="alertdialog"
-      aria-live="assertive"
-      aria-modal="true"
+      role="status"
+      aria-live="polite"
+      aria-hidden="true"
       aria-labelledby="connection-overlay-title"
       aria-describedby="connection-overlay-copy"
     >
@@ -1076,7 +1226,7 @@
           .replace(/&/g, "&amp;")
           .replace(/</g, "&lt;")
           .replace(/>/g, "&gt;")
-          .replace(/\\"/g, "&quot;")
+          .replace(/"/g, "&quot;")
           .replace(/'/g, "&#39;");
       }
 
@@ -1094,7 +1244,13 @@
 
       const FURATIC_HANDLED_ERROR = "__furatic_handled__";
       let connectionOverlayMode = "";
-      let reloadAfterRestoreScheduled = false;
+      let restoredOverlayTimer = 0;
+      let lastModeratorState = null;
+      let auditLimit = 20;
+      let connectedLimit = 20;
+      let auditSearchResults = null;
+      const accountMutations = new Set();
+      const moderatorAccounts = new Map();
       let loginRedirectScheduled = false;
 
       function buildModeratorLoginUrl() {
@@ -1109,6 +1265,11 @@
         const detailElement = document.getElementById("connection-overlay-detail");
 
         connectionOverlayMode = mode;
+        overlay.setAttribute("role", mode === "login-required" ? "alertdialog" : "status");
+        overlay.setAttribute("aria-live", mode === "login-required" ? "assertive" : "polite");
+        overlay.setAttribute("aria-hidden", "false");
+        if (mode === "login-required") overlay.setAttribute("aria-modal", "true");
+        else overlay.removeAttribute("aria-modal");
         overlay.className = "connection-overlay visible " + mode;
         titleElement.textContent = title;
         copyElement.textContent = copy;
@@ -1118,32 +1279,29 @@
       function hideConnectionOverlay() {
         const overlay = document.getElementById("connection-overlay");
         connectionOverlayMode = "";
-        overlay.className = "connection-overlay";
+        overlay.classList.remove("visible");
+        overlay.setAttribute("aria-hidden", "true");
       }
 
       function showServerRestartOverlay(detail) {
+        if (loginRedirectScheduled) return;
+        window.clearTimeout(restoredOverlayTimer);
         setConnectionOverlay(
           "server-down",
-          "Server restarting",
-          "The local Furatic web server is temporarily unavailable and is trying to restart itself.",
-          detail || "Connection should be restored in just a few moments."
+          "Reconnecting",
+          "Refreshing server data as soon as the connection returns.",
+          detail || "Your page and enabled moderation alerts stay active."
         );
+        if (!refreshInFlight) {
+          window.clearTimeout(refreshTimer);
+          refreshTimer = window.setTimeout(refreshState, 1500);
+        }
       }
 
       function showConnectionRestoredOverlay() {
-        setConnectionOverlay(
-          "restored",
-          "Connection restored",
-          "Furatic is back online. The moderator page will reload now so everything is perfectly in sync.",
-          "Reloading in a moment."
-        );
-
-        if (!reloadAfterRestoreScheduled) {
-          reloadAfterRestoreScheduled = true;
-          window.setTimeout(function () {
-            window.location.reload();
-          }, 1800);
-        }
+        setConnectionOverlay("restored", "Connection restored", "The moderation panel is back in sync.", "Your forms and scroll positions have been kept.");
+        window.clearTimeout(restoredOverlayTimer);
+        restoredOverlayTimer = window.setTimeout(function () { if (connectionOverlayMode === "restored") hideConnectionOverlay(); }, 1800);
       }
 
       function showLoginRequiredOverlay() {
@@ -1177,14 +1335,20 @@
       async function parseModeratorJsonResponse(response) {
         const contentType = String(response.headers.get("content-type") || "").toLowerCase();
 
-        if (response.status === 401 || response.status === 403) {
+        if (response.redirected && new URL(response.url, window.location.href).pathname === new URL(MODERATOR_LOGIN_URL, window.location.href).pathname) {
           showLoginRequiredOverlay();
           throwHandled();
         }
 
+        if (response.status === 401 || response.status === 403) {
+          const error = contentType.includes("application/json") ? await response.json() : {};
+          if (error.loginRequired || response.status === 401) { showLoginRequiredOverlay(); throwHandled(); }
+          throw new Error(error.message || "You do not have permission for this action.");
+        }
+
         if (!response.ok) {
           if (response.status === 502 || response.status === 503 || response.status === 504) {
-            showServerRestartOverlay("The web process is recovering. Furatic will reconnect automatically.");
+            showServerRestartOverlay();
             throwHandled();
           }
 
@@ -1193,7 +1357,7 @@
         }
 
         if (!contentType.includes("application/json")) {
-          showLoginRequiredOverlay();
+          showServerRestartOverlay();
           throwHandled();
         }
 
@@ -1359,7 +1523,7 @@
       
       function renderAuditLog(entries, bannedIps) {
         const list = document.getElementById("audit-list");
-        const safeEntries = Array.isArray(entries) ? entries : [];
+        const safeEntries = (Array.isArray(entries) ? entries : []).slice(0, auditLimit);
         const bannedSet = new Set((Array.isArray(bannedIps) ? bannedIps : []).map(function (ip) {
           return String(ip);
         }));
@@ -1371,7 +1535,7 @@
           return;
         }
       
-        list.innerHTML = safeEntries.map(function (entry) {
+        patchActivityList(list, safeEntries.map(function (entry) {
           const rawActor = String(entry.actor || "unknown").trim();
           const rawActorRole = String(entry.actorRole || "user").trim().toLowerCase();
           const actor = escapeHtml(rawActor || "unknown");
@@ -1399,7 +1563,7 @@
             : "";
       
           return [
-            '<article class="audit-item' + identityClass + '"' + identityStyle + '>',
+            '<article data-activity-key="' + escapeHtml(JSON.stringify([entry.ts, entry.action, entry.actor, entry.target, entry.songKey, entry.browserToken])) + '" class="audit-item' + identityClass + '"' + identityStyle + '>',
               '<div class="audit-topline">',
                 serverCodename ? '<span class="token ip-token">' + escapeHtml(serverCodename) + '</span>' : '',
                 browserToken ? '<span class="token">Browser: ' + escapeHtml(browserToken) + '</span>' : '',
@@ -1417,12 +1581,13 @@
               '</div>',
             '</article>'
           ].join("");
-        }).join("");
+        }).join(""));
       }
 
       function renderConnectedIps(entries, bannedIps, whitelistedIps, protectedModeratorIps) {
         const list = document.getElementById("connected-ip-list");
-        const items = buildAuditIpIndex(entries);
+        const allItems = buildAuditIpIndex(entries);
+        const items = allItems.slice(0, connectedLimit);
         const bannedSet = new Set((Array.isArray(bannedIps) ? bannedIps : []).map(function (ip) {
           return String(ip);
         }));
@@ -1431,14 +1596,14 @@
         }));
         const protectedSet = protectedModeratorIps instanceof Set ? protectedModeratorIps : new Set();
       
-        document.getElementById("connected-ip-count").textContent = String(items.length);
+        document.getElementById("connected-ip-count").textContent = String(allItems.length);
       
         if (!items.length) {
           list.innerHTML = '<div class="empty-state">No IPs are visible in the current audit log.</div>';
           return;
         }
       
-        list.innerHTML = items.map(function (item) {
+        patchActivityList(list, items.map(function (item) {
           const identity = getIpIdentity(item.ip);
           const isBanned = bannedSet.has(item.ip);
           const isWhitelisted = whitelistSet.has(item.ip);
@@ -1460,7 +1625,7 @@
               ].join("");
       
           return [
-            '<article class="ip-item ip-identity" style="' + getIpIdentityStyle(item.ip) + '">',
+            '<article data-activity-key="' + escapeHtml(item.ip) + '" class="ip-item ip-identity" style="' + getIpIdentityStyle(item.ip) + '">',
               '<div class="ip-title-row">',
                 '<span class="token ip-token">' + escapeHtml(identity.label) + '</span>',
                 isBanned ? '<span class="token">Banned</span>' : '',
@@ -1475,7 +1640,7 @@
               actionsHtml,
             '</article>'
           ].join("");
-        }).join("");
+        }).join(""));
       }
 
       function renderIpIntelStatus(ipIntel) {
@@ -1618,26 +1783,22 @@
       }
       
       async function postForm(url, data) {
-        const body = new URLSearchParams(data);
-
+        const abort = new AbortController();
+        const timeout = window.setTimeout(function () { abort.abort(); }, 12000);
         try {
           const response = await fetch(url, {
-            method: "POST",
-            credentials: "same-origin",
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-              "X-CSRFToken": CSRF_TOKEN,
-              "X-Requested-With": "XMLHttpRequest"
-            },
-            body: body.toString(),
+            method: "POST", credentials: "same-origin", signal: abort.signal,
+            headers: {"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8", "X-CSRFToken": CSRF_TOKEN, "X-Requested-With": "XMLHttpRequest"},
+            body: new URLSearchParams(data).toString(),
           });
-
           return await parseModeratorJsonResponse(response);
         } catch (error) {
-          if (error && error.message === FURATIC_HANDLED_ERROR) throw error;
-          showServerRestartOverlay("The action could not reach the web server. Furatic is reconnecting automatically.");
-          throwHandled();
-        }
+          if (error && (error.name === "AbortError" || error instanceof TypeError)) {
+            showServerRestartOverlay("Connection interrupted. The panel will re-read server state; this action will not be repeated automatically.");
+            refreshState(); throwHandled();
+          }
+          throw error;
+        } finally { window.clearTimeout(timeout); }
       }
 
       async function reviewSong(key, decision) {
@@ -1675,22 +1836,41 @@
         });
       }
 
+      function resetAccountForm() {
+        const form = document.getElementById("moderator-account-form");
+        if (!form) return;
+        form.reset();
+        const save = document.getElementById("account-save");
+        save.dataset.id = ""; save.textContent = "Add moderator";
+        document.getElementById("account-cancel").hidden = true;
+      }
       async function saveAccount(id) {
-        const data = await postForm(MODERATOR_ACCOUNT_SAVE_URL, {
-          id: id || "", username: document.getElementById("account-username").value.trim(),
-          label: document.getElementById("account-label").value.trim(),
-          password: document.getElementById("account-password").value,
-          song_only: document.getElementById("account-song-only").checked,
-          active: document.getElementById("account-active").checked
-        });
-        renderModeratorAccounts(data.accounts || [], true);
-        document.getElementById("account-username").value = "";
-        document.getElementById("account-label").value = "";
-        document.getElementById("account-password").value = "";
-        document.getElementById("account-song-only").checked = false;
-        document.getElementById("account-active").checked = true;
-        document.getElementById("account-save").dataset.id = "";
-        document.getElementById("account-save").textContent = "Add moderator";
+        const button = document.getElementById("account-save");
+        if (button.disabled) return;
+        button.disabled = true;
+        try {
+          const data = await postForm(MODERATOR_ACCOUNT_SAVE_URL, {
+            id: id || "", username: document.getElementById("account-username").value.trim(),
+            label: document.getElementById("account-label").value.trim(), password: document.getElementById("account-password").value,
+            song_only: document.getElementById("account-song-only").checked, active: document.getElementById("account-active").checked
+          });
+          renderModeratorAccounts(data.accounts || [], true);
+          resetAccountForm(); showToast("Moderator account saved.", "good");
+        } finally { button.disabled = false; }
+      }
+      async function updateAccountSettings(id, change) {
+        if (accountMutations.has(String(id))) return;
+        accountMutations.add(String(id));
+        const card = document.querySelector('[data-moderator-id="' + id + '"]');
+        if (card) { card.setAttribute("aria-busy", "true"); card.querySelectorAll("button,input").forEach(function (el) { el.disabled = true; }); }
+        try {
+          const data = await postForm(MODERATOR_ACCOUNT_SAVE_URL, Object.assign({id: id, settings_only: true}, change));
+          accountMutations.delete(String(id)); renderModeratorAccounts(data.accounts || [], true);
+          showToast("Moderator permissions saved.", "good");
+        } catch (error) {
+          accountMutations.delete(String(id)); renderModeratorAccounts(Array.from(moderatorAccounts.values()), true);
+          handleModeratorRequestError(error, "Unable to change moderator permissions.");
+        }
       }
 
       let requestSettingsDirty = false;
@@ -1876,15 +2056,58 @@
 
       let lastHeldKeys = new Set();
       let alertAudioContext = null;
-      function playReviewDing() {
-        if (!alertAudioContext) return;
-        const oscillator = alertAudioContext.createOscillator();
-        const gain = alertAudioContext.createGain();
-        oscillator.frequency.value = 880;
-        gain.gain.setValueAtTime(.22, alertAudioContext.currentTime);
-        gain.gain.exponentialRampToValueAtTime(.001, alertAudioContext.currentTime + .45);
-        oscillator.connect(gain); gain.connect(alertAudioContext.destination);
-        oscillator.start(); oscillator.stop(alertAudioContext.currentTime + .45);
+      let moderationAlertsEnabled = false;
+      let alertPreviewPending = false;
+      let reviewSoundEndsAt = 0;
+      async function playReviewSound() {
+        const context = alertAudioContext;
+        if (!moderationAlertsEnabled || !context) return;
+        try {
+          if (context.state === "suspended") await context.resume();
+        } catch (_error) { return; }
+        if (context.state !== "running" || context.currentTime < reviewSoundEndsAt) return;
+
+        const start = context.currentTime + 0.04;
+        reviewSoundEndsAt = start + 7;
+        const master = context.createGain();
+        const compressor = context.createDynamicsCompressor();
+        const echo = context.createDelay(0.5);
+        const echoGain = context.createGain();
+        master.gain.value = 0.8;
+        compressor.threshold.value = -18;
+        compressor.knee.value = 12;
+        compressor.ratio.value = 3;
+        compressor.attack.value = 0.008;
+        compressor.release.value = 0.2;
+        echo.delayTime.value = 0.28;
+        echoGain.gain.value = 0.12;
+        master.connect(compressor);
+        master.connect(echo); echo.connect(echoGain); echoGain.connect(compressor);
+        compressor.connect(context.destination);
+
+        // Three warm, rising chime phrases; soft attacks and a quiet echo avoid harsh edges.
+        [0, 2.25, 4.5].forEach(function (phrase, phraseIndex) {
+          [587.33, 739.99, 880].forEach(function (frequency, noteIndex) {
+            const at = start + phrase + [0, 0.32, 0.68][noteIndex];
+            const duration = phraseIndex === 2 && noteIndex === 2 ? 1.5 : 1.05;
+            [0.18, 0.038, 0.009].forEach(function (level, harmonic) {
+              const oscillator = context.createOscillator();
+              const envelope = context.createGain();
+              oscillator.type = "sine";
+              oscillator.frequency.value = frequency * (harmonic + 1);
+              envelope.gain.setValueAtTime(0.0001, at);
+              envelope.gain.exponentialRampToValueAtTime(level, at + 0.022);
+              envelope.gain.exponentialRampToValueAtTime(level * 0.28, at + 0.3);
+              envelope.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+              oscillator.connect(envelope); envelope.connect(master);
+              oscillator.onended = function () { oscillator.disconnect(); envelope.disconnect(); };
+              oscillator.start(at); oscillator.stop(at + duration);
+            });
+          });
+        });
+        window.setTimeout(function () {
+          master.disconnect(); echo.disconnect(); echoGain.disconnect(); compressor.disconnect();
+        }, 7300);
       }
       function highlightedLyrics(song) {
         let value = escapeHtml(song.lyrics || "Lyrics unavailable");
@@ -1900,7 +2123,7 @@
         document.getElementById("review-count").textContent = String(held.length);
         const nextKeys = new Set(held.map(function (song) { return String(song.queueKey); }));
         if (held.some(function (song) { return !lastHeldKeys.has(String(song.queueKey)); })) {
-          playReviewDing();
+          if (!alertPreviewPending) playReviewSound();
         }
         lastHeldKeys = nextKeys;
         document.getElementById("review-list").innerHTML = held.map(function (song) {
@@ -1910,11 +2133,65 @@
 
       function renderModeratorAccounts(accounts, isAdmin) {
         const section = document.getElementById("moderator-accounts-section");
+        if (!section) return;
         section.hidden = !isAdmin;
-        if (!isAdmin) return;
-        document.getElementById("moderator-accounts-list").innerHTML = accounts.map(function (account) {
-          return '<article class="queue-item"><div class="queue-copy"><div class="queue-title">' + escapeHtml(account.label) + '</div><div class="queue-artist">@' + escapeHtml(account.username) + ' · ' + (account.songOnly ? 'song-only' : 'full moderator') + ' · ' + (account.active ? 'active' : 'inactive') + '</div></div>' + (account.admin ? '' : '<div class="queue-actions"><button data-action="edit-account" data-account="' + encodeURIComponent(JSON.stringify(account)) + '">Edit</button><button class="warn" data-action="delete-account" data-key="' + account.id + '">Delete</button></div>') + '</article>';
-        }).join("");
+        if (!isAdmin) { document.getElementById("moderator-accounts-list").replaceChildren(); resetAccountForm(); return; }
+        const list = document.getElementById("moderator-accounts-list");
+        const signature = JSON.stringify(accounts);
+        if (list.dataset.signature === signature && !accountMutations.size && !list.querySelector('[aria-busy="true"]')) return;
+        const nodes = new Map(Array.from(list.children).map(function (node) { return [node.dataset.moderatorId, node]; }));
+        const keep = new Set();
+        accounts.forEach(function (account) {
+          const id = String(account.id); keep.add(id); moderatorAccounts.set(id, account);
+          if (accountMutations.has(id)) return;
+          let card = nodes.get(id);
+          if (!card) { card = document.createElement("article"); card.className = "queue-item account-card activity-new"; card.dataset.moderatorId = id; }
+          card.setAttribute("aria-busy", "false");
+          const html = '<div class="account-card-header"><div><div class="queue-title">' + escapeHtml(account.label) + '</div><small>@' + escapeHtml(account.username) + '</small></div><span class="token">' + (account.admin ? 'Administrator' : account.active ? 'Enabled' : 'Suspended') + '</span></div>' + (account.admin ? '<small>Administrator account is protected. Manage it through the existing administrator settings.</small>' :
+            '<div class="account-role-controls" role="group" aria-label="Permissions for ' + escapeHtml(account.username) + '"><button type="button" data-action="account-role" data-key="' + id + '" data-song-only="false" aria-pressed="' + !account.songOnly + '">Full moderator</button><button type="button" data-action="account-role" data-key="' + id + '" data-song-only="true" aria-pressed="' + account.songOnly + '">Song moderator</button></div><small>' + (account.songOnly ? 'Songs and review only. No IP tools, settings or event modes.' : 'Songs, review, IP tools, settings, blocklists and event modes.') + '</small><label class="account-access"><input type="checkbox" class="account-switch" data-account-active="' + id + '" ' + (account.active ? 'checked' : '') + '><span>Sign-in enabled<small>Switch off to suspend access; the account is kept.</small></span></label><div class="queue-actions"><button type="button" data-action="edit-account" data-account="' + encodeURIComponent(JSON.stringify(account)) + '">Edit details / password</button><button type="button" class="warn" data-action="delete-account" data-key="' + id + '">Delete</button></div>');
+          if (card.innerHTML !== html) card.innerHTML = html;
+          if (!card.parentElement) list.appendChild(card);
+        });
+        nodes.forEach(function (node, id) { if (!keep.has(id)) { node.remove(); moderatorAccounts.delete(id); } });
+        list.dataset.signature = signature;
+      }
+
+      function patchActivityList(list, html) {
+        if (list.dataset.lastHtml === html) return;
+        list.dataset.lastHtml = html;
+        const scroll = list.scrollTop;
+        const focused = list.contains(document.activeElement) ? document.activeElement : null;
+        const focusAction = focused && focused.dataset.action;
+        const focusIp = focused && focused.dataset.ip;
+        const before = new Map();
+        const old = new Map(Array.from(list.children).map(function (node) {
+          before.set(node.dataset.activityKey, node.getBoundingClientRect().top);
+          return [node.dataset.activityKey, node];
+        }));
+        const template = document.createElement("template"); template.innerHTML = html;
+        const keep = new Set();
+        Array.from(template.content.children).forEach(function (incoming, index) {
+          const key = incoming.dataset.activityKey; keep.add(key);
+          const signature = incoming.innerHTML;
+          let node = old.get(key);
+          if (!node) { node = incoming; node.classList.add("activity-new"); node.style.animationDelay = Math.min(index * 12, 84) + "ms"; }
+          else if (node.dataset.rowSignature !== signature) { node.innerHTML = signature; node.setAttribute("style", incoming.getAttribute("style") || ""); node.className = incoming.className; }
+          node.dataset.rowSignature = signature;
+          if (list.children[index] !== node) list.insertBefore(node, list.children[index] || null);
+        });
+        old.forEach(function (node, key) { if (!keep.has(key)) node.remove(); });
+        list.scrollTop = scroll;
+        if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          Array.from(list.children).forEach(function (node) {
+            const previous = before.get(node.dataset.activityKey);
+            const delta = previous - node.getBoundingClientRect().top;
+            if (Number.isFinite(delta) && Math.abs(delta) > 1 && node.animate) node.animate([{transform: 'translateY(' + delta + 'px)'}, {transform: 'translateY(0)'}], {duration: 420, easing: 'cubic-bezier(.22,1,.36,1)'});
+          });
+        }
+        if (focusAction) {
+          const button = Array.from(list.querySelectorAll("button")).find(function (node) { return node.dataset.action === focusAction && node.dataset.ip === focusIp; });
+          if (button) button.focus({preventScroll: true});
+        }
       }
 
       function renderBanList(ips) {
@@ -1939,6 +2216,7 @@
       }
 
       function renderState(data) {
+        lastModeratorState = data;
         document.body.classList.toggle("song-only", Boolean(data.songOnly));
         const queue = Array.isArray(data.queue) ? data.queue : [];
         const bannedIps = Array.isArray(data.bannedIps) ? data.bannedIps : [];
@@ -1956,21 +2234,26 @@
         renderConnectedIps(auditLog, bannedIps, whitelistedIps, protectedModeratorIps);
         renderBanList(bannedIps);
         renderWhitelistList(whitelistedIps);
-        renderAuditLog(auditLog, bannedIps);
+        renderAuditLog(auditSearchResults || auditLog, bannedIps);
         renderIpIntelStatus(data.ipIntel || null);
         renderBlocklists(blocklists);
       }
 
       let refreshInFlight = false;
+      let refreshTimer = 0;
       async function refreshState() {
-        if (refreshInFlight || reloadAfterRestoreScheduled || loginRedirectScheduled) {
+        if (refreshInFlight || loginRedirectScheduled) {
           return;
         }
 
+        window.clearTimeout(refreshTimer);
         refreshInFlight = true;
+        const abort = new AbortController();
+        const timeout = window.setTimeout(function () { abort.abort(); }, 9000);
 
         try {
           const response = await fetch(MODERATOR_STATE_URL, {
+            signal: abort.signal,
             credentials: "same-origin",
             cache: "no-store",
             headers: { "X-Requested-With": "XMLHttpRequest" },
@@ -1989,9 +2272,13 @@
             return;
           }
 
-          showServerRestartOverlay("Furatic is checking the connection and will reload automatically when it is restored.");
+          showServerRestartOverlay("The moderation panel is reconnecting. Live music is handled independently.");
         } finally {
+          window.clearTimeout(timeout);
           refreshInFlight = false;
+          if (!loginRedirectScheduled) {
+            refreshTimer = window.setTimeout(refreshState, connectionOverlayMode === "server-down" ? 1500 : 6000);
+          }
         }
       }
 
@@ -2115,15 +2402,20 @@
             await reviewSong(button.getAttribute("data-key"), "approve");
           } else if (action === "deny-song") {
             await reviewSong(button.getAttribute("data-key"), "deny");
+          } else if (action === "account-role") {
+            await updateAccountSettings(button.getAttribute("data-key"), {song_only: button.getAttribute("data-song-only")});
           } else if (action === "edit-account") {
             const account = JSON.parse(decodeURIComponent(button.getAttribute("data-account")));
             document.getElementById("account-username").value = account.username;
             document.getElementById("account-label").value = account.label;
             document.getElementById("account-password").value = "";
-            document.getElementById("account-song-only").checked = account.songOnly;
+            document.querySelector('[name="account-role"][value="' + (account.songOnly ? "songs" : "full") + '"]').checked = true;
             document.getElementById("account-active").checked = account.active;
             document.getElementById("account-save").dataset.id = account.id;
             document.getElementById("account-save").textContent = "Save moderator";
+            document.getElementById("account-cancel").hidden = false;
+            document.getElementById("account-username").focus({preventScroll: true});
+            document.getElementById("moderator-account-form").scrollIntoView({behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "nearest"});
           } else if (action === "delete-account") {
             if (window.confirm("Delete this moderator account?")) {
               const data = await postForm(MODERATOR_ACCOUNT_DELETE_URL, {id: button.getAttribute("data-key")});
@@ -2142,15 +2434,32 @@
           handleModeratorRequestError(error, "Unable to switch mode.");
         });
       });
-      document.getElementById("enable-alerts-button").addEventListener("click", function () {
-        alertAudioContext =
-          alertAudioContext ||
-          new (window.AudioContext || window.webkitAudioContext)();
-      
-        alertAudioContext.resume();
+      document.getElementById("enable-alerts-button").addEventListener("click", async function () {
+        try {
+          alertAudioContext = alertAudioContext || new (window.AudioContext || window.webkitAudioContext)();
+          await alertAudioContext.resume();
+        } catch (_error) {
+          showToast("Unable to enable audio. Please try the alerts button again.", "warn");
+          return;
+        }
+        if (moderationAlertsEnabled) return;
+        moderationAlertsEnabled = true;
         this.textContent = "Moderation alerts enabled";
         this.classList.remove("needs-attention");
-        playReviewDing();
+        this.setAttribute("aria-pressed", "true");
+        alertPreviewPending = true;
+        const preview = document.getElementById("alert-preview");
+        preview.innerHTML = "<strong>Moderation alerts enabled</strong><p>You'll hear this sound whenever a song is held for manual moderator review. A preview will play in a moment.</p>";
+        preview.setAttribute("aria-hidden", "false");
+        preview.classList.add("visible");
+        window.setTimeout(function () {
+          alertPreviewPending = false;
+          playReviewSound();
+        }, 2500);
+        window.setTimeout(function () {
+          preview.classList.remove("visible");
+          preview.setAttribute("aria-hidden", "true");
+        }, 10200);
       });
       
       document
@@ -2227,10 +2536,27 @@
         const q = document.getElementById("history-search-input").value.trim();
         const response = await fetch(MODERATOR_AUDIT_SEARCH_URL + "?q=" + encodeURIComponent(q), {credentials: "same-origin"});
         const data = await parseModeratorJsonResponse(response);
-        renderAuditLog(data.results || [], []);
+        auditSearchResults = q ? (data.results || []) : null;
+        renderAuditLog(auditSearchResults || (lastModeratorState && lastModeratorState.auditLog) || [], (lastModeratorState && lastModeratorState.bannedIps) || []);
       });
-      document.getElementById("account-save").addEventListener("click", function () {
-        saveAccount(this.dataset.id || "").catch(function (error) { handleModeratorRequestError(error, "Unable to save moderator."); });
+      const accountForm = document.getElementById("moderator-account-form");
+      if (accountForm) {
+        accountForm.addEventListener("submit", function (event) { event.preventDefault(); saveAccount(document.getElementById("account-save").dataset.id || "").catch(function (error) { handleModeratorRequestError(error, "Unable to save moderator."); }); });
+        document.getElementById("account-cancel").addEventListener("click", resetAccountForm);
+        document.getElementById("moderator-accounts-list").addEventListener("change", function (event) {
+          const input = event.target.closest("[data-account-active]");
+          if (input) updateAccountSettings(input.dataset.accountActive, {active: String(input.checked)});
+        });
+      }
+      [["audit-expand", "audit-list"], ["connected-expand", "connected-ip-list"]].forEach(function (ids) {
+        document.getElementById(ids[0]).addEventListener("click", function () {
+          const expanded = this.getAttribute("aria-expanded") !== "true";
+          this.setAttribute("aria-expanded", String(expanded));
+          this.innerHTML = (expanded ? "Show 20" : "Show 100") + ' <span aria-hidden="true">⌄</span>';
+          document.getElementById(ids[1]).classList.toggle("is-expanded", expanded);
+          if (ids[0] === "audit-expand") auditLimit = expanded ? 100 : 20; else connectedLimit = expanded ? 100 : 20;
+          if (lastModeratorState) renderState(lastModeratorState);
+        });
       });
       document.getElementById("song-details-close").addEventListener("click", function () {
         document.getElementById("song-details-dialog").close();
@@ -2261,7 +2587,10 @@
       });
 
       refreshState();
-      window.setInterval(refreshState, 6000);
+      window.addEventListener("online", refreshState);
+      document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState === "visible") refreshState();
+      });
     </script>
   </body>
 </html>
