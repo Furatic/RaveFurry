@@ -35,6 +35,7 @@ urlpatterns: List[Union[URLPattern, URLResolver]] = [
     path("", base.landing, name="base"),
     path("afterhours/", base.afterhours, name="afterhours"),
     path("afterhours/top-songs/", base.afterhours_top_songs, name="afterhours-top-songs"),
+    path("afterhours/history/", base.afterhours_history, name="afterhours-history"),
     path("p/", musiq.embed, name="musiq"),
     path("musiq/", RedirectView.as_view(pattern_name="base", permanent=False)),
     path("lights/", lights.index, name="lights"),
