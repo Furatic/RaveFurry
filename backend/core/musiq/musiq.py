@@ -392,11 +392,18 @@ def request_music(request: WSGIRequest) -> HttpResponse:
         song_title=queued_song.displayname(),
     )
     update_state()
+    provider.submission_token = requester_token
+    song_number = active_count + 1
+    ordinal = str(song_number) + {2: "nd", 3: "rd"}.get(song_number, "th")
+    provider.submission_message = (
+        f"Added your {ordinal} song to the extended queue."
+        if has_primary else provider.ok_message
+    )
+    provider.submission_query = query
+    user_manager.remember_request_cooldown(requester_ip, session_key)
     provider.start_deferred_enqueue()
 
-    user_manager.remember_request_cooldown(requester_ip, session_key)
-
-    return JsonResponse({"message": provider.ok_message, "key": queue_key})
+    return JsonResponse({"message": provider.submission_message, "key": queue_key, "pending": True})
 
 
 @user_manager.tracked
@@ -572,6 +579,9 @@ def state_dict() -> Dict[str, Any]:
     total_time = 0
     locked_queue_key = next_up.get_locked_queue_key()
     for song in ordered_queue_queryset():
+        if not song.internal_url:
+            # Reserve ownership/limits privately until the downloaded song is ready.
+            continue
         song_dict = model_to_dict(song)
         song_dict["occurrence_id"] = str(song.occurrence_id)
         song_dict = util.camelize(song_dict)
