@@ -375,16 +375,45 @@
       .top-songs-empty { padding: 18px 0 4px; color: var(--muted-2); font-size: 14px; line-height: 1.6; }
       .top-songs-status { margin: 12px 0 0; color: var(--muted-2); font-size: 12px; line-height: 1.5; }
       .top-songs-status:empty { display: none; }
+      .top-songs-viewport { overflow: hidden; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.22) transparent; transition: height 560ms cubic-bezier(0.22, 1, 0.36, 1); }
+      #top-songs-list { position: relative; }
+      .top-songs-viewport.is-collapsed .top-song:nth-child(n+6) { display: none; }
+      .top-songs-viewport.is-expanded { overflow-y: auto; overscroll-behavior: contain; }
+      .list-toggle { margin-top: 14px; font: inherit; cursor: pointer; min-height: 44px; }
+      .list-toggle[hidden] { display: none; }
+      .disclosure-arrow { width: 16px; height: 16px; transition: transform 360ms cubic-bezier(0.22, 1, 0.36, 1); }
+      .list-toggle[aria-expanded="true"] .disclosure-arrow { transform: rotate(180deg); }
+      .history-toggle { font: inherit; cursor: pointer; }
+      .history-toggle svg { width: 23px; height: 23px; }
+      .history-toggle[aria-expanded="true"] { background: rgba(255,255,255,0.12); border-color: rgba(var(--cyan),0.35); }
+      .history-reveal { height: 0; overflow: hidden; opacity: 0; visibility: hidden; transition: height 560ms cubic-bezier(0.22, 1, 0.36, 1), opacity 380ms ease, visibility 0s linear 560ms; }
+      .history-reveal.is-open { opacity: 1; visibility: visible; transition-delay: 0s; }
+      .history-reveal-inner { display: flow-root; min-width: 0; }
+      .afterhours-history-content { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--white-line); }
+      .afterhours-history-heading { margin: 0 0 6px; font-size: 20px; letter-spacing: -0.025em; }
+      .afterhours-history-copy { margin: 0 0 16px; color: var(--muted-2); font-size: 13px; line-height: 1.5; }
+      .afterhours-history-scroll { max-height: min(420px, 52svh); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.22) transparent; padding-right: 4px; }
+      .afterhours-history-list { list-style: none; display: grid; gap: 8px; margin: 0; padding: 0; }
+      .history-song { display: grid; grid-template-columns: 44px minmax(0,1fr) auto; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--white-soft); border-radius: 16px; background: rgba(255,255,255,0.025); }
+      .history-song-time { color: var(--muted-2); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+      .afterhours-history-status { margin: 12px 0 0; color: var(--muted-2); font-size: 13px; line-height: 1.5; }
+      .afterhours-history-status:empty { display: none; }
       @media (max-width: 520px) {
         .top-song { grid-template-columns: 22px 36px minmax(0, 1fr) auto; gap: 9px; padding: 10px 9px; }
+        .notify-row { gap: 8px; }
         .top-song-art { width: 36px; height: 36px; border-radius: 9px; }
         .top-song-votes { padding: 6px 8px; font-size: 12px; }
+        .history-song { grid-template-columns: 36px minmax(0,1fr) auto; gap: 9px; padding: 10px 9px; }
+        .history-song-time { font-size: 11px; }
+        .afterhours-history-scroll { max-height: min(360px, 48svh); }
       }
 
       @media (prefers-reduced-motion: reduce) {
         .shell {
           transition: none;
         }
+
+        .top-songs-viewport, .history-reveal, .disclosure-arrow { transition: none; }
 
         .logo-wrap::before,
         .logo-wrap img {
@@ -466,7 +495,22 @@
                       decoding="async"
                     >
                   </a>
+                  <button id="afterhours-history-toggle" class="notify-button icon-button history-toggle" type="button" aria-label="Recently played songs" title="Recently played songs" aria-controls="afterhours-history" aria-expanded="false">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11a9 9 0 1 1 2.7 7.4M3 4v7h7"/><path d="M12 7v5l3 2"/></svg>
+                  </button>
                 </div>
+              </div>
+            </div>
+          </div>
+          <div id="afterhours-history" class="history-reveal" aria-hidden="true" inert>
+            <div class="history-reveal-inner">
+              <div class="afterhours-history-content">
+                <h2 class="afterhours-history-heading">Recently played</h2>
+                <p class="afterhours-history-copy">Last 12 hours · newest first · up to 50 songs</p>
+                <div class="afterhours-history-scroll" tabindex="0" role="region" aria-label="Recently played songs, newest first">
+                  <ol id="afterhours-history-list" class="afterhours-history-list"></ol>
+                </div>
+                <p id="afterhours-history-status" class="afterhours-history-status" role="status" aria-live="polite"></p>
               </div>
             </div>
           </div>
@@ -476,6 +520,7 @@
             <h2 id="top-songs-title">Top songs from today's Pass the Aux event</h2>
             <p>Thank you for joining! Here are the songs everyone upvoted the most.</p>
           </div>
+          <div id="top-songs-viewport" class="top-songs-viewport is-collapsed">
           <ol id="top-songs-list" class="top-songs-list" aria-label="Songs ranked by votes">
             {% for song in afterhours_top_songs %}
             <li class="top-song">
@@ -488,6 +533,10 @@
             <li class="top-songs-empty">{% if afterhours_top_songs_unavailable %}Top songs are temporarily unavailable. We'll try again shortly.{% else %}No songs from the last 12 hours yet. Thank you for being here.{% endif %}</li>
             {% endfor %}
           </ol>
+          </div>
+          <button id="top-songs-toggle" class="notify-button list-toggle" type="button" aria-controls="top-songs-viewport" aria-expanded="false"{% if afterhours_top_songs|length <= 5 %} hidden{% endif %}>
+            <span>Show More</span><svg class="disclosure-arrow" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 7.5 5 5 5-5"/></svg>
+          </button>
           <p id="top-songs-status" class="top-songs-status" role="status" aria-live="polite"></p>
         </section>
       </section>
@@ -755,6 +804,108 @@
 
       let topSongsInFlight = false;
       let topSongsSignature = "";
+      let topSongsExpanded = false;
+      let topSongsCollapseTimer = 0;
+      const topSongsViewport = document.getElementById("top-songs-viewport");
+      const topSongsToggle = document.getElementById("top-songs-toggle");
+      const reduceListMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      function syncTopSongsViewport() {
+        const list = document.getElementById("top-songs-list");
+        const rows = Array.from(list.children);
+        const hasMore = rows.filter(function (row) { return row.classList.contains("top-song"); }).length > 5;
+        topSongsToggle.hidden = !hasMore;
+        if (!hasMore) topSongsExpanded = false;
+        topSongsToggle.setAttribute("aria-expanded", String(topSongsExpanded));
+        topSongsToggle.querySelector("span").textContent = topSongsExpanded ? "Show Less" : "Show More";
+        topSongsViewport.classList.toggle("is-expanded", topSongsExpanded);
+        rows.forEach(function (row, index) {
+          const hidden = index >= 5 && !topSongsExpanded;
+          row.setAttribute("aria-hidden", String(hidden));
+          row.toggleAttribute("inert", hidden);
+        });
+        const last = rows[Math.min(4, rows.length - 1)];
+        const collapsed = last ? last.offsetTop + last.offsetHeight : 0;
+        const expanded = Math.ceil(Math.min(list.scrollHeight, Math.max(collapsed + Math.min(120, window.innerHeight * 0.18), Math.min(620, window.innerHeight * 0.72))));
+        topSongsViewport.style.height = (topSongsExpanded ? expanded : collapsed) + "px";
+      }
+
+      topSongsToggle.addEventListener("click", function () {
+        window.clearTimeout(topSongsCollapseTimer);
+        topSongsExpanded = !topSongsExpanded;
+        topSongsViewport.classList.remove("is-collapsed");
+        if (!topSongsExpanded) {
+          topSongsViewport.scrollTo({top: 0, behavior: reduceListMotion ? "auto" : "smooth"});
+          topSongsCollapseTimer = window.setTimeout(function () {
+            if (!topSongsExpanded) topSongsViewport.classList.add("is-collapsed");
+          }, reduceListMotion ? 0 : 560);
+        }
+        syncTopSongsViewport();
+      });
+
+      const historyToggle = document.getElementById("afterhours-history-toggle");
+      const historyRegion = document.getElementById("afterhours-history");
+      function syncHistoryHeight() {
+        historyRegion.style.height = historyRegion.classList.contains("is-open") ? historyRegion.firstElementChild.scrollHeight + "px" : "0px";
+      }
+      historyToggle.addEventListener("click", function () {
+        const open = !historyRegion.classList.contains("is-open");
+        if (!open && historyRegion.contains(document.activeElement)) historyToggle.focus({preventScroll: true});
+        historyRegion.classList.toggle("is-open", open);
+        historyRegion.setAttribute("aria-hidden", String(!open));
+        historyRegion.toggleAttribute("inert", !open);
+        historyToggle.setAttribute("aria-expanded", String(open));
+        syncHistoryHeight();
+        if (open) refreshAfterhoursHistory();
+      });
+
+      if (typeof ResizeObserver === "function") {
+        const listResizeObserver = new ResizeObserver(function () { syncTopSongsViewport(); syncHistoryHeight(); });
+        listResizeObserver.observe(document.getElementById("top-songs-list"));
+        listResizeObserver.observe(historyRegion.firstElementChild);
+      }
+      window.addEventListener("resize", function () { syncTopSongsViewport(); syncHistoryHeight(); }, {passive: true});
+      syncTopSongsViewport();
+
+      let afterhoursHistoryInFlight = false;
+      let afterhoursHistorySignature = "";
+      async function refreshAfterhoursHistory() {
+        if (afterhoursHistoryInFlight) return;
+        afterhoursHistoryInFlight = true;
+        const abort = new AbortController();
+        const timeout = window.setTimeout(function () { abort.abort(); }, 9000);
+        const list = document.getElementById("afterhours-history-list");
+        const status = document.getElementById("afterhours-history-status");
+        if (!list.children.length) status.textContent = "Loading recently played songs…";
+        syncHistoryHeight();
+        try {
+          const response = await fetch("{% url 'afterhours-history' %}", {cache: "no-store", signal: abort.signal});
+          if (!response.ok) throw new Error("History unavailable");
+          const data = await response.json();
+          if (!Array.isArray(data.songs)) throw new Error("Invalid history");
+          const songs = data.songs.slice(0, 50);
+          const signature = JSON.stringify(songs);
+          if (signature !== afterhoursHistorySignature) {
+            const scroll = list.parentElement.scrollTop;
+            list.innerHTML = songs.length ? songs.map(function (song) {
+              const artwork = /^https?:\/\//i.test(String(song.artworkUrl || "")) ? '<img src="' + escapeSongText(song.artworkUrl) + '" alt="" loading="lazy" decoding="async" onerror="this.remove()">' : "";
+              const ended = new Date(song.endedAt);
+              const time = Number.isFinite(ended.getTime()) ? '<time class="history-song-time" datetime="' + escapeSongText(song.endedAt) + '" title="' + escapeSongText(ended.toLocaleString()) + '">' + escapeSongText(ended.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})) + '</time>' : "";
+              return '<li class="history-song"><span class="top-song-art" aria-hidden="true">♪' + artwork + '</span><span class="top-song-copy"><strong class="top-song-title">' + escapeSongText(song.title || "Untitled song") + '</strong><span class="top-song-artist">' + escapeSongText(song.artist || "Unknown artist") + '</span></span>' + time + '</li>';
+            }).join("") : '<li class="top-songs-empty">No songs have finished playing in the last 12 hours yet.</li>';
+            list.parentElement.scrollTop = scroll;
+            afterhoursHistorySignature = signature;
+          }
+          status.textContent = "";
+        } catch (_error) {
+          status.textContent = "Recently played songs will refresh when the connection returns.";
+        } finally {
+          window.clearTimeout(timeout);
+          afterhoursHistoryInFlight = false;
+          syncHistoryHeight();
+        }
+      }
+
       async function refreshTopSongs() {
         if (topSongsInFlight) return;
         topSongsInFlight = true;
@@ -769,12 +920,15 @@
           const songs = data.songs.slice(0, 20);
           const signature = JSON.stringify(songs);
           if (signature !== topSongsSignature) {
+            const scroll = topSongsViewport.scrollTop;
             document.getElementById("top-songs-list").innerHTML = songs.length ? songs.map(function (song, index) {
               const artwork = /^https?:\/\//i.test(String(song.artworkUrl || "")) ? '<img src="' + escapeSongText(song.artworkUrl) + '" alt="" loading="lazy" decoding="async" onerror="this.remove()">' : "";
               const votes = Number.isFinite(Number(song.votes)) ? Number(song.votes) : 0;
               return '<li class="top-song"><span class="top-song-rank" aria-hidden="true">' + (index + 1) + '</span><span class="top-song-art" aria-hidden="true">♪' + artwork + '</span><span class="top-song-copy"><strong class="top-song-title">' + escapeSongText(song.title) + '</strong><span class="top-song-artist">' + escapeSongText(song.artist) + '</span></span><span class="top-song-votes">' + votes + ' vote' + (votes === 1 ? '' : 's') + '</span></li>';
             }).join("") : '<li class="top-songs-empty">No songs from the last 12 hours yet. Thank you for being here.</li>';
             topSongsSignature = signature;
+            syncTopSongsViewport();
+            topSongsViewport.scrollTop = scroll;
           }
           status.textContent = "";
         } catch (_error) {
@@ -802,6 +956,7 @@
       setInterval(pollMode, 7000);
       refreshTopSongs();
       setInterval(refreshTopSongs, 60000);
+      setInterval(function () { if (historyRegion.classList.contains("is-open")) refreshAfterhoursHistory(); }, 60000);
     </script>
   </body>
 </html>
