@@ -6,10 +6,13 @@ import asyncio
 import contextlib
 import ctypes
 import logging
+import json
+import math
 from logging.handlers import RotatingFileHandler
 import os
 from pathlib import Path
 import signal
+import time
 
 # Numerical work stays in one worker rather than spawning BLAS thread pools.
 for name in ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "OMP_NUM_THREADS"):
@@ -63,6 +66,20 @@ class ParentGuard:
 
 def create_app(capture, port):
     clients = set()
+    publishers = set()
+    scene = None
+    scene_at = 0.0
+    scene_sequence = 0
+    scene_lengths = {"motion": 4, "clouds": 16, "material": 16, "dance": 4,
+                     "thumps": 4, "bass": 2, "music": 4, "energy": 4, "sizes": 4,
+                     "bands": 48, "lights": 4, "edgeEnergy": 4, "edgeLights": 4,
+                     "edgeMusic": 4, "edgeBands": 48}
+
+    def snapshot():
+        frame = capture.snapshot()
+        if scene is not None and time.monotonic() - scene_at < .35:
+            frame["scene"] = {"sequence": scene_sequence, "uniforms": scene}
+        return frame
     @web.middleware
     async def only_local(request, handler):
         if not local_request(request, port):
@@ -81,6 +98,44 @@ def create_app(capture, port):
         return web.json_response({"service": "furatic-visualizer", "version": 1,
                                   "workerAlive": alive, "status": capture.snapshot()["status"]}, status=200 if alive else 503)
 
+    async def features(request):
+        return web.json_response(snapshot())
+
+    async def publish_scene(request):
+        nonlocal scene, scene_at, scene_sequence
+        if publishers:
+            raise web.HTTPServiceUnavailable(text="OBS scene publisher already connected")
+        ws = web.WebSocketResponse(heartbeat=20, max_msg_size=16384, compress=False)
+        publishers.add(ws)
+        try:
+            await ws.prepare(request)
+            async for message in ws:
+                if message.type != WSMsgType.TEXT:
+                    continue
+                try:
+                    values = json.loads(message.data)
+                    if not isinstance(values, dict) or set(values) != set(scene_lengths):
+                        raise ValueError("Invalid scene fields")
+                    for key, length in scene_lengths.items():
+                        vector = values[key]
+                        if not isinstance(vector, list) or len(vector) != length:
+                            raise ValueError("Invalid scene vector")
+                        if any(type(value) not in (int, float) or not math.isfinite(value)
+                               or abs(value) > 10000 for value in vector):
+                            raise ValueError("Invalid scene value")
+                    scene = values
+                    scene_at = time.monotonic()
+                    scene_sequence += 1
+                except (ValueError, TypeError):
+                    await ws.close(code=1008, message=b"Invalid scene metadata")
+                    break
+        finally:
+            publishers.discard(ws)
+            scene = None
+            if not ws.closed:
+                await ws.close()
+        return ws
+
     async def socket(request):
         if len(clients) >= MAX_CLIENTS:
             raise web.HTTPServiceUnavailable(text="Visualizer client limit reached")
@@ -93,7 +148,7 @@ def create_app(capture, port):
             async def send():
                 try:
                     while not ws.closed:
-                        frame = capture.snapshot()
+                        frame = snapshot()
                         # A blocked OBS client is dropped, never given a growing queue.
                         await asyncio.wait_for(ws.send_json(frame), timeout=.50)
                         await asyncio.sleep(.020)
@@ -116,7 +171,7 @@ def create_app(capture, port):
         return ws
 
     async def close_sockets(app):
-        for ws in tuple(clients):
+        for ws in tuple(clients | publishers):
             with contextlib.suppress(asyncio.TimeoutError, ConnectionError):
                 await asyncio.wait_for(ws.close(code=1001, message=b"Visualizer stopping"), timeout=.50)
 
@@ -125,6 +180,8 @@ def create_app(capture, port):
     app.router.add_get("/obs-background.html", page)
     app.router.add_get("/_healthz/", health)
     app.router.add_get("/features", socket)
+    app.router.add_get("/features.json", features)
+    app.router.add_get("/scene", publish_scene)
     app.on_shutdown.append(close_sockets)
     return app
 
