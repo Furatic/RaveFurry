@@ -99,16 +99,29 @@
         max-height: none;
         aspect-ratio: auto;
         object-fit: cover;
+        transform: scale(2);
+        transform-origin: center;
         border: 0;
         border-radius: 0;
         box-shadow: none;
         background: transparent;
       }
 
+      .stream-background::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        -webkit-backdrop-filter: blur(24px);
+        backdrop-filter: blur(24px);
+        background: rgba(3,5,10,0.08);
+      }
+
       .stream-background::after {
         content: "";
         position: absolute;
         inset: 0;
+        z-index: 2;
         background: linear-gradient(180deg, rgba(3,5,10,0.18), rgba(3,5,10,0.46));
       }
 
@@ -528,6 +541,20 @@
         box-shadow: 0 18px 40px rgba(0,0,0,0.30);
       }
 
+      .tv-stream-error {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        text-align: center;
+        color: var(--text);
+        background: #060910;
+      }
+      .tv-stream-error[hidden] { display: none; }
+      .tv-video-shell.is-stream-error > .tv-video { visibility: hidden; }
+
       .event-notifications {
         position: fixed;
         top: 18px;
@@ -883,6 +910,7 @@
             </div>
             <div class="tv-video-shell">
               <video id="tv-player" class="tv-video" autoplay muted playsinline preload="auto" aria-hidden="true" tabindex="-1"></video>
+              <div id="tv-stream-error" class="tv-stream-error" role="status" hidden>Video stream error, server stopped responding. Check your internet connection.</div>
             </div>
           </div>
         </div>
@@ -1179,6 +1207,15 @@
         const background = document.getElementById("stream-background");
         const videoShell = panel.querySelector(".tv-video-shell");
         const mirror = document.getElementById("stream-background-mirror");
+        const streamError = document.getElementById("tv-stream-error");
+        const retryDelays = [2, 3, 7, 14, 21, 35, 42, 49, 56, 63, 70];
+        let retryIndex = 0;
+        let retryTimer = 0;
+        let streamWatchdog = 0;
+        let streamGeneration = 0;
+        let streamReloading = false;
+        let streamFailed = false;
+        let disposed = false;
 
         let mirrorContext = null;
         let mirrorFrame = 0;
@@ -1260,10 +1297,13 @@
             if (mirror.width !== width || mirror.height !== height) {
               mirror.width = width; mirror.height = height;
             }
-            const cover = Math.max(width / video.videoWidth, height / video.videoHeight);
-            const drawWidth = video.videoWidth * cover;
-            const drawHeight = video.videoHeight * cover;
-            mirrorContext.drawImage(video, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
+            const cropWidth = video.videoWidth / 2;
+            const cropHeight = video.videoHeight / 2;
+            const cover = Math.max(width / cropWidth, height / cropHeight);
+            const drawWidth = cropWidth * cover;
+            const drawHeight = cropHeight * cover;
+            mirrorContext.drawImage(video, video.videoWidth / 4, video.videoHeight / 4, cropWidth, cropHeight,
+              (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
             lastMirrorDraw = now;
           }
           mirrorUsesVideoFrames = typeof video.requestVideoFrameCallback === "function";
@@ -1272,7 +1312,7 @@
         }
 
         function startBackgroundMirror() {
-          if (mirroring) return;
+          if (mirroring || disposed || streamFailed || streamReloading) return;
           mirrorContext = mirrorContext || mirror.getContext("2d", {alpha: false, desynchronized: true});
           if (!mirrorContext) return;
           mirroring = true; lastMirrorDraw = 0;
@@ -1299,26 +1339,97 @@
           stopBackgroundMirror();
         }
 
+        function clearStreamWatchdog() {
+          window.clearTimeout(streamWatchdog);
+          streamWatchdog = 0;
+        }
+
+        function armStreamWatchdog(delay) {
+          clearStreamWatchdog();
+          if (disposed || streamFailed || streamReloading || !hasLoadedStream) return;
+          const generation = streamGeneration;
+          const position = video.currentTime;
+          streamWatchdog = window.setTimeout(function () {
+            streamWatchdog = 0;
+            if (generation === streamGeneration && video.currentTime === position &&
+                (!video.paused || pendingPlayAttempt)) retryStream();
+          }, delay);
+        }
+
+        function resetStreamSource() {
+          hasLoadedStream = false;
+          pendingPlayAttempt = false;
+          streamGeneration++;
+          clearStreamWatchdog();
+          const previous = hlsInstance;
+          hlsInstance = null;
+          if (previous) previous.destroy();
+          video.pause();
+          video.removeAttribute("src");
+          video.load();
+        }
+
+        function retryStream() {
+          // Native media and HLS errors share one timer and one retry budget.
+          if (disposed || streamFailed || streamReloading || !hasLoadedStream) return;
+          streamReloading = true;
+          streamGeneration++;
+          pendingPlayAttempt = false;
+          clearStreamWatchdog();
+          stopBackgroundMirror();
+          background.classList.remove("is-ready");
+          video.pause();
+          if (hlsInstance) hlsInstance.stopLoad();
+          if (retryIndex >= retryDelays.length) {
+            streamFailed = true;
+            resetStreamSource();
+            video.muted = true;
+            video.controls = false;
+            streamError.hidden = false;
+            videoShell.classList.add("is-stream-error");
+            return;
+          }
+          const delay = retryDelays[retryIndex++] * 1000;
+          retryTimer = window.setTimeout(function () {
+            retryTimer = 0;
+            if (disposed || streamFailed) return;
+            resetStreamSource();
+            streamReloading = false;
+            pendingPlayAttempt = true;
+            ensureStream();
+            if (panel.classList.contains("is-open") && !streamReloading && !streamFailed) startBackgroundMirror();
+            void tryPlayLive();
+          }, delay);
+        }
+
         function ensureStream() {
-          if (hasLoadedStream || !hlsUrl) {
-            return;
-          }
-
+          if (disposed || streamFailed || streamReloading || hasLoadedStream || !hlsUrl) return;
           hasLoadedStream = true;
-
-          if (canUseNativeHls()) {
-            video.src = hlsUrl;
-            return;
-          }
-
-          if (canUseHlsJs()) {
-            hlsInstance = new window.Hls({
-              enableWorker: true,
-              lowLatencyMode: true,
-              backBufferLength: 20,
-            });
-            hlsInstance.loadSource(hlsUrl);
-            hlsInstance.attachMedia(video);
+          streamGeneration++;
+          try {
+            if (canUseNativeHls()) {
+              video.src = hlsUrl;
+              video.load();
+            } else if (canUseHlsJs()) {
+              const config = {enableWorker: true, lowLatencyMode: true, backBufferLength: 20};
+              // HLS's internal retries must not compete with the exact schedule.
+              ["manifestLoadPolicy", "playlistLoadPolicy", "fragLoadPolicy", "keyLoadPolicy",
+                "certLoadPolicy", "steeringManifestLoadPolicy"].forEach(function (name) {
+                config[name] = {default: Object.assign({}, window.Hls.DefaultConfig[name].default,
+                  {timeoutRetry: null, errorRetry: null})};
+              });
+              const instance = new window.Hls(config);
+              hlsInstance = instance;
+              instance.on(window.Hls.Events.ERROR, function (_event, data) {
+                if (hlsInstance === instance && (data.fatal || data.type === window.Hls.ErrorTypes.NETWORK_ERROR)) retryStream();
+              });
+              instance.loadSource(hlsUrl);
+              instance.attachMedia(video);
+            }
+            // Bound a silent initial load; active playback stalls get 2 seconds.
+            armStreamWatchdog(10000);
+          } catch (_error) {
+            retryStream();
           }
         }
 
@@ -1358,12 +1469,21 @@
         }
 
         async function tryPlayLive() {
+          if (disposed || streamFailed || streamReloading || !hasLoadedStream) return false;
+          const generation = streamGeneration;
           try {
             video.muted = !panel.classList.contains("is-open");
             await video.play();
-            pendingPlayAttempt = false;
+            if (generation === streamGeneration) pendingPlayAttempt = false;
             return true;
-          } catch (_error) {
+          } catch (error) {
+            if (generation === streamGeneration && !streamReloading && !streamFailed) {
+              // Browser permission blocks and DOM-move aborts are not network failures.
+              if (error.name === "NotAllowedError") {
+                pendingPlayAttempt = false;
+                clearStreamWatchdog();
+              } else if (error.name !== "AbortError") retryStream();
+            }
             return false;
           }
         }
@@ -1381,7 +1501,7 @@
           syncTvToggle(true);
           startBackgroundMirror();
           videoShell.appendChild(video);
-          video.controls = true;
+          video.controls = !streamFailed;
           video.tabIndex = 0;
           video.removeAttribute("aria-hidden");
 
@@ -1412,10 +1532,40 @@
 
         showVideoInBackground();
         video.addEventListener("playing", function () {
-          if (background.classList.contains("is-ready")) return;
-          const reveal = function () { background.classList.add("is-ready"); };
+          if (disposed || streamFailed || streamReloading || !hasLoadedStream) return;
+          const generation = streamGeneration;
+          const reveal = function () {
+            if (disposed || generation !== streamGeneration || streamFailed || streamReloading) return;
+            retryIndex = 0;
+            streamError.hidden = true;
+            videoShell.classList.remove("is-stream-error");
+            background.classList.add("is-ready");
+            armStreamWatchdog(2000);
+          };
           if (typeof video.requestVideoFrameCallback === "function") video.requestVideoFrameCallback(reveal);
           else window.requestAnimationFrame(reveal);
+        });
+        video.addEventListener("error", function () {
+          if (video.error && video.error.code !== 1) retryStream();
+        });
+        video.addEventListener("ended", retryStream);
+        ["waiting", "stalled"].forEach(function (event) {
+          video.addEventListener(event, function () {
+            if (!video.paused || pendingPlayAttempt) armStreamWatchdog(2000);
+          });
+        });
+        video.addEventListener("timeupdate", function () {
+          if (!video.paused) armStreamWatchdog(2000);
+        });
+        video.addEventListener("pause", function () {
+          if (!pendingPlayAttempt) clearStreamWatchdog();
+        });
+        window.addEventListener("beforeunload", function () {
+          disposed = true;
+          window.clearTimeout(retryTimer);
+          retryTimer = 0;
+          stopBackgroundMirror();
+          resetStreamSource();
         });
         video.addEventListener("volumechange", function () {
           if (!panel.classList.contains("is-open") && !video.muted) video.muted = true;
