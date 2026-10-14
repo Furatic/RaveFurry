@@ -1366,7 +1366,7 @@
           // svh is stable when the mobile address bar moves. A keyboard may shrink it.
           const stableHeight = viewportProbe.getBoundingClientRect().height || window.innerHeight;
           const viewportHeight = desktop ? window.innerHeight : Math.min(stableHeight, window.visualViewport?.height || stableHeight);
-          const reserve = desktop ? 0 : 112;
+          const reserve = desktop ? (wantsTv ? Math.ceil(logoSlot.offsetHeight || 50) + 32 : 0) : 112;
           const available = Math.max(120, Math.floor(viewportHeight - padding - reserve - 2));
           const tvHeight = !desktop && wantsTv ? Math.max(120, Math.min(Math.round((Math.min(620, window.innerWidth - 28) - 42) * 9 / 16 + 78), Math.floor(available * .44))) : 0;
           const height = Math.max(96, available - tvHeight - (tvHeight ? 14 : 0));
