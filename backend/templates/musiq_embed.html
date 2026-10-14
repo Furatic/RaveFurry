@@ -1536,14 +1536,14 @@
     .furatic-list-more[hidden] { display: none; }
     #auto-queue-dock { flex: 0 0 92px; min-height: 92px; padding: 8px 12px; margin-top: 8px; }
     #auto-queue-toggle { display: flex; width: 100%; justify-content: space-between; align-items: center; padding: 0 0 8px; border: 0; background: transparent; color: var(--furatic-text); cursor: pointer; }
-    #auto-queue-toggle > i { transition: transform 300ms cubic-bezier(0.22,1,0.36,1); }
+    #auto-queue-toggle > i { transition: transform var(--queue-panel-duration, 420ms) cubic-bezier(.4,0,.2,1); }
     #auto-queue-toggle[aria-expanded="true"] > i { transform: rotate(180deg); }
     #auto-queue-count { color: var(--furatic-muted); font-size: .8rem; font-weight: normal; padding-left: 6px; }
-    #auto-queue-preview { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: 8px; color: var(--furatic-muted); font-size: .8rem; transition: opacity 220ms ease, transform 300ms ease; }
+    #auto-queue-preview { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: 8px; color: var(--furatic-muted); font-size: .8rem; transition: opacity var(--queue-panel-duration, 420ms) cubic-bezier(.4,0,.2,1), transform var(--queue-panel-duration, 420ms) cubic-bezier(.4,0,.2,1); }
     .auto-queue-thumbnail { display: grid; place-items: center; min-width: 0; height: 44px; border-radius: 8px; overflow: hidden; color: var(--furatic-text); background: rgba(255,255,255,0.04); transition: transform 220ms ease; }
     .auto-queue-thumbnail:hover { transform: translateY(-2px); }
     .auto-queue-thumbnail img { width: 100%; height: 100%; object-fit: cover; }
-    .auto-queue-expanded-note { position: absolute; left: 12px; right: 12px; bottom: 15px; color: var(--furatic-muted); font-size: .8rem; opacity: 0; pointer-events: none; transition: opacity 220ms ease; margin: 0; }
+    .auto-queue-expanded-note { position: absolute; left: 12px; right: 12px; bottom: 15px; color: var(--furatic-muted); font-size: .8rem; opacity: 0; pointer-events: none; transition: opacity var(--queue-panel-duration, 420ms) cubic-bezier(.4,0,.2,1); margin: 0; }
     #auto-queue-dock.is-expanded #auto-queue-preview { opacity: 0; transform: translateY(6px); pointer-events: none; }
     #auto-queue-dock.is-expanded .auto-queue-expanded-note { opacity: 1; }
     #auto-song-queue .queue-vote-cluster .vote-up, #auto-song-queue .queue-vote-cluster .vote-down, #history-song-queue .queue-info-controls { display: none !important; }
@@ -1552,7 +1552,7 @@
     #furatic-closing-banner { flex: 0 0 auto; overflow-y: auto; }
     #furatic-closing-banner.is-visible { max-height: min(100px, 24vh); }
     .furatic-embed-shell:has(#furatic-closing-banner.is-visible) .furatic-queue-middle { min-height: 0; }
-    #main-queue-scroll { transition: opacity 220ms ease; }
+    #main-queue-scroll { transition: opacity var(--queue-panel-duration, 420ms) cubic-bezier(.4,0,.2,1); }
     .furatic-queue-middle:has(.furatic-queue-drawer.is-open) #main-queue-scroll { opacity: 0; }
     #auto-queue-preview.is-empty { grid-template-columns: 1fr; align-items: center; min-height: 44px; }
     .ui-autocomplete { max-height: min(240px, 32vh); overflow-y: auto; }
@@ -1573,8 +1573,9 @@
     .extended-queue-heading { display: none; }
     html.furatic-desktop-panels .furatic-embed-shell {
         position: relative;
-        padding-left: calc(30px + var(--desktop-side-space, 76px));
-        transition: padding-left 520ms cubic-bezier(.22,1,.36,1);
+        --queue-panel-duration: 600ms;
+        padding-left: calc(30px + var(--desktop-side-space, 120px));
+        transition: padding-left 600ms cubic-bezier(.4,0,.2,1);
     }
     html.furatic-desktop-panels .furatic-embed-shell > ul,
     html.furatic-desktop-panels .furatic-queue-middle { position: relative; z-index: 6; }
@@ -1582,29 +1583,33 @@
     html.furatic-desktop-panels .furatic-queue-drawer {
         position: fixed; inset: 6px auto 14px 18px; width: 440px; z-index: 2;
         border: 1px solid var(--furatic-border); box-shadow: var(--furatic-shadow);
+        clip-path: inset(0 max(0px, calc(458px - var(--desktop-side-space, 120px))) 0 0);
+        transition: clip-path 600ms cubic-bezier(.4,0,.2,1);
     }
     html.furatic-desktop-panels .furatic-queue-middle { position: static; z-index: auto; }
     html.furatic-desktop-panels #main-queue-scroll { position: relative; z-index: 6; opacity: 1; }
     html.furatic-desktop-panels .furatic-queue-middle:has(.furatic-queue-drawer.is-open) #main-queue-scroll { opacity: 1; }
     html.furatic-desktop-panels .extended-queue-heading { display: flex; }
     html.furatic-desktop-panels #auto-queue-dock {
-        position: absolute; inset: 6px auto 14px calc(var(--desktop-side-space, 76px) - 52px);
-        width: 54px; min-height: 0; margin: 0; padding: 12px 7px; z-index: 8;
+        position: absolute; inset: 6px auto 14px calc(var(--desktop-side-space, 120px) - 96px);
+        width: 94px; min-height: 0; margin: 0; padding: 12px 7px; z-index: 8;
         display: flex; flex-direction: column; align-items: center; gap: 12px;
-        transition: left 520ms cubic-bezier(.22,1,.36,1);
+        transition: left 600ms cubic-bezier(.4,0,.2,1);
     }
     html.furatic-desktop-panels #auto-queue-toggle { flex-direction: column-reverse; gap: 14px; padding: 0; }
-    html.furatic-desktop-panels #auto-queue-toggle strong { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; }
+    html.furatic-desktop-panels #auto-queue-toggle strong { writing-mode: horizontal-tb; transform: none; white-space: normal; text-align: center; line-height: 1.2; }
+    html.furatic-desktop-panels .auto-queue-label > span { display: block; }
+    html.furatic-desktop-panels #auto-queue-count { display: block; padding: 6px 0 0; }
     html.furatic-desktop-panels #auto-queue-toggle > i { transform: rotate(-90deg); }
     html.furatic-desktop-panels #auto-queue-toggle[aria-expanded="true"] > i { transform: rotate(90deg); }
-    html.furatic-desktop-panels #auto-queue-preview { grid-template-columns: 1fr; width: 38px; overflow-y: auto; min-height: 0; }
-    html.furatic-desktop-panels #auto-queue-preview.is-empty { writing-mode: vertical-rl; width: auto; }
+    html.furatic-desktop-panels #auto-queue-preview { grid-template-columns: 1fr; width: 100%; overflow-y: auto; min-height: 0; text-align: center; }
+    html.furatic-desktop-panels #auto-queue-preview.is-empty { writing-mode: horizontal-tb; width: 100%; line-height: 1.4; }
     html.furatic-desktop-panels .auto-queue-thumbnail { flex-shrink: 0; }
     html.furatic-desktop-panels .auto-queue-expanded-note { display: none; }
-    html.furatic-desktop-panels #toast-container { padding-left: calc(12px + var(--desktop-side-space, 76px)); transition: padding-left 520ms cubic-bezier(.22,1,.36,1); }
+    html.furatic-desktop-panels #toast-container { padding-left: calc(12px + var(--desktop-side-space, 120px)); transition: padding-left 600ms cubic-bezier(.4,0,.2,1); }
     @media (prefers-reduced-motion: reduce) {
         html.furatic-desktop-panels .furatic-embed-shell, html.furatic-desktop-panels #auto-queue-dock,
-        html.furatic-desktop-panels #toast-container { transition: none; }
+        html.furatic-desktop-panels #toast-container, html.furatic-desktop-panels .furatic-queue-drawer { transition: none; }
     }
 
 </style>
@@ -1675,7 +1680,7 @@
         </section>
     </div>
     <section id="auto-queue-dock" class="list-group-item" aria-label="Extended Queue preview">
-        <button id="auto-queue-toggle" type="button" aria-expanded="false" aria-controls="auto-drawer"><strong>Extended Queue <span id="auto-queue-count">0</span></strong><i class="fas fa-chevron-up" aria-hidden="true"></i></button>
+        <button id="auto-queue-toggle" type="button" aria-expanded="false" aria-controls="auto-drawer"><strong><span class="auto-queue-label"><span>Extended</span> <span>Queue</span></span> <span id="auto-queue-count">0</span></strong><i class="fas fa-chevron-up" aria-hidden="true"></i></button>
         <div id="auto-queue-preview">No extra songs waiting.</div>
         <p class="auto-queue-expanded-note">Voting starts after it enters the main queue.</p>
     </section>
