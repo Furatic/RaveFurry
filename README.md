@@ -27,7 +27,7 @@ It started with [Raveberry](https://github.com/raveberry/raveberry), and a subst
 The current setup runs on a Windows 11 machine, a 2013 Mac Pro. The website reaches the public through a VPS and a Newt tunnel. OBS sends its video through a separate stream server. That is the deployment this README describes, and the reason behind many of the choices in this fork.
 
 <p align="center">
-  <img src="docs/media/event-desktop-stream.gif" alt="The current event page with its song queue and video player open" width="1050">
+  <img src="event-desktop-stream.gif" alt="The current event page with its song queue and video player open" width="1050">
 </p>
 
 ## One event, three states
@@ -71,7 +71,7 @@ If the backend is restarting for any reason, the dashboard reconnects and refres
 The public page is built around the queue, readable song cards, a responsive pre-queue, and a video player. The layout changes with the available screen space, and expanding panels and page entrances share the same visual design.
 
 <p align="center">
-  <img src="docs/media/event-responsive-layout.gif" alt="The event interface adapting to different browser sizes" width="900">
+  <img src="event-responsive-layout.gif" alt="The event interface adapting to different browser sizes" width="900">
 </p>
 
 Opening the video player starts the media stream. The page does not begin fetching the stream just because someone opened the queue. If playback fails, the player tries multiple reconnect attempts.
@@ -87,8 +87,8 @@ Opening the video player starts the media stream. The page does not begin fetchi
     <th>Mobile</th>
   </tr>
   <tr>
-    <td valign="top"><img src="docs/media/event-desktop-entrance.gif" alt="Desktop event page entrance animation" width="640"></td>
-    <td valign="top"><img src="docs/media/event-mobile-entrance.gif" alt="Mobile event page entrance animation" width="200"></td>
+    <td valign="top"><img src="event-desktop-entrance.gif" alt="Desktop event page entrance animation" width="640"></td>
+    <td valign="top"><img src="event-mobile-entrance.gif" alt="Mobile event page entrance animation" width="200"></td>
   </tr>
 </table>
 
@@ -98,26 +98,31 @@ Opening the video player starts the media stream. The page does not begin fetchi
 
 ```mermaid
 flowchart TB
-    visitors["Visitors"]
+    host["Windows 11 event host · Django and Waitress"]
+    newt["Newt tunnel connector"]
+    data["Local PostgreSQL and Redis"]
+    player["VLC playback"]
     website["Website VPS and reverse proxy"]
+    obs["OBS and audio visualizer"]
     relay["Separate video stream server"]
+    visitors["Website visitors"]
+    viewers["Video viewers"]
 
-    subgraph host["Event host · Windows 11"]
-        newt["Newt connector"]
-        app["Django and Waitress"]
-        data["PostgreSQL and Redis"]
-        player["VLC playback"]
-        obs["OBS and audio visualizer"]
-        newt <--> app
-        app <--> data
-        app --> player
-        player --> obs
-    end
+    host <--> newt
+    host <--> data
+    host --> player
+    newt <--> website
+    website <--> visitors
+    player --> obs
+    obs --> relay
+    relay --> viewers
 
-    visitors <--> website
-    website <-->|"Website tunnel"| newt
-    obs -->|"One encoded stream"| relay
-    relay -->|"Video when opened"| visitors
+    classDef eventHost fill:#2b2140,stroke:#b79af8,color:#ffffff,stroke-width:2px
+    classDef service fill:#172337,stroke:#78b5ff,color:#ffffff
+    classDef audience fill:#15332e,stroke:#8ad9be,color:#ffffff
+    class host eventHost
+    class newt,data,player,website,obs,relay service
+    class visitors,viewers audience
 ```
 
 In our deployment, the host sits on a closed network. [Newt](https://github.com/fosrl/newt) makes the outbound tunnel connection for the web resource; the public website VPS proxies traffic through it. The Windows web server listens on loopback, and the tunnel exposes that web service rather than opening general access to the machine. PostgreSQL, Redis, and playback stay local.
