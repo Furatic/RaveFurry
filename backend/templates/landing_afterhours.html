@@ -518,7 +518,6 @@
         <section class="card top-songs-card" aria-labelledby="top-songs-title">
           <div class="top-songs-header">
             <h2 id="top-songs-title">Top songs from today's Pass the Aux event</h2>
-            <p>Thank you for joining! Here are the songs everyone upvoted the most.</p>
           </div>
           <div id="top-songs-viewport" class="top-songs-viewport is-collapsed">
           <ol id="top-songs-list" class="top-songs-list" aria-label="Songs ranked by votes">
@@ -530,7 +529,7 @@
               <span class="top-song-votes">{{ song.votes }} vote{{ song.votes|pluralize }}</span>
             </li>
             {% empty %}
-            <li class="top-songs-empty">{% if afterhours_top_songs_unavailable %}Top songs are temporarily unavailable. We'll try again shortly.{% else %}No songs from the last 12 hours yet. Thank you for being here.{% endif %}</li>
+            <li class="top-songs-empty">{% if afterhours_top_songs_unavailable %}Top songs are temporarily unavailable. We'll try again shortly.{% else %}Pass the Aux was not active today, check back after our next event to see the songs everyone voted for the most :3{% endif %}</li>
             {% endfor %}
           </ol>
           </div>
@@ -892,7 +891,7 @@
               const ended = new Date(song.endedAt);
               const time = Number.isFinite(ended.getTime()) ? '<time class="history-song-time" datetime="' + escapeSongText(song.endedAt) + '" title="' + escapeSongText(ended.toLocaleString()) + '">' + escapeSongText(ended.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})) + '</time>' : "";
               return '<li class="history-song"><span class="top-song-art" aria-hidden="true">♪' + artwork + '</span><span class="top-song-copy"><strong class="top-song-title">' + escapeSongText(song.title || "Untitled song") + '</strong><span class="top-song-artist">' + escapeSongText(song.artist || "Unknown artist") + '</span></span>' + time + '</li>';
-            }).join("") : '<li class="top-songs-empty">No songs have finished playing in the last 12 hours yet.</li>';
+            }).join("") : '<li class="top-songs-empty">Pass the Aux was not active today, check back after our next event to see the songs everyone played :3</li>';
             list.parentElement.scrollTop = scroll;
             afterhoursHistorySignature = signature;
           }
