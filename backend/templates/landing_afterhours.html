@@ -924,7 +924,7 @@
               const artwork = /^https?:\/\//i.test(String(song.artworkUrl || "")) ? '<img src="' + escapeSongText(song.artworkUrl) + '" alt="" loading="lazy" decoding="async" onerror="this.remove()">' : "";
               const votes = Number.isFinite(Number(song.votes)) ? Number(song.votes) : 0;
               return '<li class="top-song"><span class="top-song-rank" aria-hidden="true">' + (index + 1) + '</span><span class="top-song-art" aria-hidden="true">♪' + artwork + '</span><span class="top-song-copy"><strong class="top-song-title">' + escapeSongText(song.title) + '</strong><span class="top-song-artist">' + escapeSongText(song.artist) + '</span></span><span class="top-song-votes">' + votes + ' vote' + (votes === 1 ? '' : 's') + '</span></li>';
-            }).join("") : '<li class="top-songs-empty">Pass the Aux was not active today, check back after our next event to see the songs everyone played :3</li>';
+            }).join("") : '<li class="top-songs-empty">Pass the Aux was not active today, check back after our next event to see the songs everyone voted for the most :3</li>';
             topSongsSignature = signature;
             syncTopSongsViewport();
             topSongsViewport.scrollTop = scroll;
