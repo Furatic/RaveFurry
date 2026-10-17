@@ -71,7 +71,13 @@ class CoreConfig(AppConfig):
             from core import voting
             voting.import_legacy_votes()
             
+            # The runtime cache is reset on a planned recycle, but the next-up
+            # reservation must survive the gap between songs.
+            from core.musiq import next_up
+            locked_queue_key = next_up.get_locked_queue_key()
             redis.start()
+            if locked_queue_key is not None:
+                next_up.set_locked_queue_key(locked_queue_key)
             voting.restore_presentation_cache()
 
             from core import site_mode  # pylint: disable=import-outside-toplevel
@@ -95,6 +101,8 @@ class CoreConfig(AppConfig):
                 logging.warning("unable to initialize built-in moderator: %s", exc)
 
             def stop_workers() -> None:
+                from core import obs_export
+                obs_export.stop()
                 # wake up the playback thread and stop it
                 redis.put("stop_playback_loop", True)
                 playback.queue_changed.set()
