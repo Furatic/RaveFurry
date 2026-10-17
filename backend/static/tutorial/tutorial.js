@@ -12,6 +12,7 @@
   const loading = document.getElementById('ft-loading');
   const next = document.getElementById('ft-next');
   const close = document.getElementById('ft-close');
+  const cue = new window.FuraticTutorialCue(dialog);
   const labels = {adding: 'Adding music', voting: 'Voting on songs', multiple: 'Adding several songs', prequeue: 'How the pre-queue works'};
   // New revision intentionally ignores both the old rules and broken v2 guide.
   const storageKey = 'furatic-tutorial-v3';
@@ -35,7 +36,7 @@
     const after = panel.getBoundingClientRect();
     animate(panel, [{width: before.width + 'px', height: before.height + 'px'}, {width: after.width + 'px', height: after.height + 'px'}], 360);
   }
-  function disposeFrame() { clearTimeout(loadTimer); if (frame) frame.remove(); frame = null; token = ''; }
+  function disposeFrame() { cue.pointTo(null); clearTimeout(loadTimer); if (frame) frame.remove(); frame = null; token = ''; }
   function resetHub() {
     disposeFrame(); lesson = null; dialog.classList.remove('ft-is-lesson');
     lessonView.hidden = true; hub.hidden = false; title.textContent = 'Welcome to FURATIC!';
@@ -53,13 +54,13 @@
     closing = false; revision++; priorFocus = document.activeElement;
     priorOverflow = {value: document.documentElement.style.getPropertyValue('overflow'), priority: document.documentElement.style.getPropertyPriority('overflow')};
     document.documentElement.style.setProperty('overflow', 'hidden');
-    resetHub(); dialog.showModal(); syncViewport(); toggle.setAttribute('aria-expanded', 'true'); close.focus({preventScroll: true});
+    resetHub(); dialog.showModal(); syncViewport(); toggle.setAttribute('aria-expanded', 'true'); title.focus({preventScroll: true});
     animate(dialog, [{backgroundColor: 'rgba(3,5,12,0)'}, {backgroundColor: 'rgba(3,5,12,.94)'}], 320);
     animate(panel, [{opacity: 0, transform: 'translateY(14px) scale(.985)'}, {opacity: 1, transform: 'none'}], 360);
   }
-  function dismiss(addMusic = false) {
+  function dismiss() {
     if (!dialog.open || closing) return;
-    closing = true; revision++; clearTimeout(loadTimer);
+    closing = true; revision++; clearTimeout(loadTimer); cue.pointTo(null);
     seen = true; try { localStorage.setItem(storageKey, 'seen'); } catch (_) {}
     const style = getComputedStyle(panel);
     const from = {opacity: style.opacity || '1', transform: style.transform || 'none'};
@@ -72,17 +73,16 @@
       if (priorOverflow.value) style.setProperty('overflow', priorOverflow.value, priorOverflow.priority); else style.removeProperty('overflow');
       toggle.setAttribute('aria-expanded', 'false');
       (priorFocus instanceof HTMLElement && priorFocus.isConnected && priorFocus !== document.body ? priorFocus : toggle).focus({preventScroll: true});
-      if (addMusic) { try { document.getElementById('queue-player-frame')?.contentDocument?.getElementById('music-input')?.focus(); } catch (_) {} }
     });
   }
   async function goHub() {
     const current = ++revision;
+    cue.pointTo(null);
     await animate(lessonView, [{opacity: 1}, {opacity: 0}], 130);
     if (current !== revision || closing || !dialog.open) return;
-    const previous = lesson;
     changeLayout(resetHub);
     animate(hub, [{opacity: 0, transform: 'translateY(6px)'}, {opacity: 1, transform: 'none'}]);
-    hub.querySelector('[data-topic="' + previous + '"]')?.focus({preventScroll: true});
+    title.focus({preventScroll: true});
   }
   async function start(key) {
     if (!Object.prototype.hasOwnProperty.call(labels, key) || closing) return;
@@ -118,15 +118,16 @@
     animate(instruction, [{opacity: 0}, {opacity: 1}], 220);
     document.getElementById('ft-step').textContent = (data.step + 1) + ' / ' + data.total;
     next.hidden = !data.next; next.disabled = false; next.textContent = data.next || 'Continue';
+    cue.pointTo(data.cueInPlayer || !data.next ? null : next);
   });
   next.addEventListener('click', () => {
     if (!frame || next.disabled) return;
+    cue.pointTo(null);
     next.disabled = true; frame.contentWindow.postMessage({type: 'furatic:tutorial-next', token}, location.origin);
   });
   hub.addEventListener('click', event => { const button = event.target.closest('[data-topic]'); if (button) start(button.dataset.topic); });
   toggle.addEventListener('click', open);
   close.addEventListener('click', () => dismiss());
-  document.getElementById('ft-leave').addEventListener('click', () => dismiss(true));
   document.getElementById('ft-back').addEventListener('click', goHub);
   dialog.addEventListener('cancel', event => { event.preventDefault(); dismiss(); });
   function scheduleWelcome(force = false) {
