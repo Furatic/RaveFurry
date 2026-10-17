@@ -1,0 +1,30 @@
+{% load static %}
+<dialog id="furatic-tutorial" class="ft-dialog" aria-modal="true" aria-labelledby="ft-title" data-art-root="{% static 'tutorial/' %}">
+  <svg class="ft-symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <symbol id="ft-music" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13M9 8l11-2"/><ellipse cx="6" cy="18" rx="3" ry="2.5"/><ellipse cx="17" cy="16" rx="3" ry="2.5"/></symbol>
+      <symbol id="ft-vote" viewBox="0 0 24 24"><path d="m5 10 7-7 7 7M12 3v14M5 21h14"/></symbol>
+      <symbol id="ft-stack" viewBox="0 0 24 24"><rect x="3" y="3" width="14" height="14" rx="4"/><path d="M8 21h9a4 4 0 0 0 4-4V8M7 10h6M10 7v6"/></symbol>
+      <symbol id="ft-queue" viewBox="0 0 24 24"><path d="M9 6h12M9 12h8M9 18h4M3 6h.01M3 12h.01M3 18h.01m14-2 4 3-4 3"/></symbol>
+      <symbol id="ft-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></symbol>
+      <symbol id="ft-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+      <symbol id="ft-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+      <symbol id="ft-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    </defs>
+  </svg>
+  <div class="ft-panel">
+    <header class="ft-header">
+      <button type="button" class="ft-back" id="ft-back" aria-label="Back to all tutorials" hidden><svg class="ft-icon" aria-hidden="true"><use href="#ft-arrow"/></svg><span>All topics</span></button>
+      <span class="ft-wordmark" id="ft-wordmark">FURATIC <span> / </span> YOUR GUIDE</span>
+      <button type="button" class="ft-close" id="ft-close" aria-label="Close tutorial" autofocus><svg class="ft-icon" aria-hidden="true"><use href="#ft-x"/></svg></button>
+    </header>
+    <div class="ft-viewport" id="ft-viewport">
+      <div class="ft-view" id="ft-view"></div>
+    </div>
+    <footer class="ft-footer">
+      <span><span class="ft-status-dot" aria-hidden="true"></span> Tutorial demo</span>
+      <button type="button" id="ft-leave" class="ft-text-button">Add music now <span aria-hidden="true">↗</span></button>
+    </footer>
+  </div>
+</dialog>
+<script src="{% static 'tutorial/tutorial.js' %}?v=1" defer></script>
