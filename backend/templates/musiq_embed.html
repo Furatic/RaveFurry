@@ -35,7 +35,8 @@
         --furatic-border-strong: rgba(255, 255, 255, 0.18);
         --furatic-panel: rgba(7, 10, 22, 0.30);
         --furatic-panel-strong: rgba(7, 10, 22, 0.62);
-        --furatic-shadow: 0 16px 34px rgba(0, 0, 0, 0.24);
+        --furatic-shadow: none;
+        --furatic-panel-radius: 30px;
     }
 
     html,
@@ -255,23 +256,6 @@
         padding-right: 38px;
     }
 
-    .furatic-title-marquee {
-        text-overflow: clip !important;
-        animation: furaticTitleMarquee var(--furatic-title-marquee-duration, 10s) ease-in-out infinite;
-    }
-
-    @keyframes furaticTitleMarquee {
-        0%, 14% {
-            transform: translate3d(0, 0, 0);
-        }
-        52%, 66% {
-            transform: translate3d(var(--furatic-title-scroll-distance, -40px), 0, 0);
-        }
-        100% {
-            transform: translate3d(0, 0, 0);
-        }
-    }
-    
     .list-group-item {
         position: relative;
         overflow: hidden;
@@ -327,7 +311,6 @@
             linear-gradient(180deg, rgba(36, 150, 224, 0.070), rgba(20, 70, 136, 0.028)),
             var(--furatic-panel) !important;
         box-shadow:
-            0 16px 34px rgba(0, 0, 0, 0.24),
             0 0 18px rgba(86, 220, 255, 0.09),
             0 0 42px rgba(38, 180, 255, 0.06),
             0 0 0 1px rgba(114, 232, 255, 0.02);
@@ -1520,7 +1503,7 @@
     #current-song .current-song-vote-indicators { max-width: 34px; overflow: hidden; }
     #current-song .current-song-artwork { width: 60px; height: 60px; flex: 0 0 60px; align-self: center; object-fit: cover; }
     #current-song .current-song-top-row { min-height: 38px; }
-    #current-song-title { text-decoration: none; cursor: pointer; overflow: hidden; text-overflow: ellipsis; }
+    #current-song-title { text-decoration: none; cursor: pointer; overflow: hidden; }
     #current-song #song-votes { margin-top: 0; padding-top: 0; }
     .current-song-time-row { padding-top: 4px; }
     .furatic-queue-middle { position: relative; flex: 1 1 auto; min-height: 64px; overflow: hidden; }
@@ -1582,7 +1565,7 @@
     html.furatic-desktop-panels .furatic-queue-middle { position: relative; z-index: 6; }
     html.furatic-desktop-panels .furatic-queue-middle { overflow: visible; }
     html.furatic-desktop-panels .furatic-queue-drawer {
-        position: fixed; inset: 6px auto 14px 18px; width: 440px; z-index: 2;
+        position: fixed; inset: 0 auto 0 18px; width: 440px; z-index: 2;
         border: 1px solid var(--furatic-border); box-shadow: var(--furatic-shadow);
         clip-path: inset(0 max(0px, calc(458px - var(--desktop-side-space, 136px))) 0 0);
         transition: clip-path 600ms cubic-bezier(.4,0,.2,1);
@@ -1592,7 +1575,7 @@
     html.furatic-desktop-panels .furatic-queue-middle:has(.furatic-queue-drawer.is-open) #main-queue-scroll { opacity: 1; }
     html.furatic-desktop-panels .extended-queue-heading { display: flex; }
     html.furatic-desktop-panels #auto-queue-dock {
-        position: absolute; inset: 6px auto 14px 18px;
+        position: absolute; inset: 0 auto 0 18px;
         width: 110px; min-height: 0; margin: 0; padding: 12px 7px; z-index: 8;
         display: flex; flex-direction: column; align-items: center; gap: 12px;
         transition: width 600ms cubic-bezier(.4,0,.2,1), left 600ms cubic-bezier(.4,0,.2,1);
@@ -1624,6 +1607,10 @@
         z-index: auto; border: 0; border-radius: 0; box-shadow: none; background: transparent; backdrop-filter: none;
         clip-path: none; transform: none; transition: none; }
     #auto-queue-dock #auto-drawer[hidden] { display: none; }
+    #auto-queue-dock, #history-drawer { border-radius: var(--furatic-panel-radius) !important; }
+    #auto-queue-dock::before { border-radius: calc(var(--furatic-panel-radius) - 1px); }
+    .queue-title .furatic-title-content > strong,
+    .queue-title .furatic-title-content > span { display: inline !important; line-height: 1.18 !important; vertical-align: middle !important; }
     html.furatic-desktop-panels #auto-queue-dock.is-expanded #auto-queue-preview { display: none; transform: none; }
     html.furatic-desktop-panels #auto-queue-dock.is-expanded { width: calc(var(--desktop-side-space, 136px) - 36px); padding: 12px; }
     html.furatic-desktop-panels #auto-queue-dock.is-expanded #auto-queue-toggle { flex-direction: row; justify-content: space-between; }
@@ -2318,36 +2305,6 @@
         ownedOrbAnimationFrame = window.requestAnimationFrame(animateOwnedOrbs);
     }
 
-    function syncTitleMarquees() {
-        const titles = Array.from(document.querySelectorAll(".queue-title"));
-
-        titles.forEach(function (title) {
-            title.classList.remove("furatic-title-marquee");
-            title.style.removeProperty("--furatic-title-scroll-distance");
-            title.style.removeProperty("--furatic-title-marquee-duration");
-
-            const parent = title.parentElement;
-            if (!parent) {
-                return;
-            }
-
-            const available = parent.clientWidth;
-            const needed = title.scrollWidth;
-            const overflow = needed - available;
-
-            if (overflow <= 16) {
-                return;
-            }
-
-            const distance = overflow + 18;
-            const duration = Math.max(7, Math.min(18, 4 + (distance * 0.035)));
-
-            title.style.setProperty("--furatic-title-scroll-distance", "-" + distance.toFixed(0) + "px");
-            title.style.setProperty("--furatic-title-marquee-duration", duration.toFixed(2) + "s");
-            title.classList.add("furatic-title-marquee");
-        });
-    }
-    
     function showInlineError(message) {
         const toast = document.getElementById("error-toast");
         const content = toast ? toast.querySelector(".toast-content") : null;
@@ -2387,7 +2344,6 @@
         window.requestAnimationFrame(function () {
             decorateQueued = false;
             applyOwnSongDecorations();
-            syncTitleMarquees();
         });
     }
 
@@ -2686,7 +2642,6 @@
     scheduleIntroCompletion();
     refreshOwnSongState();
     scheduleDecorate();
-    syncTitleMarquees();
     ensureOwnedOrbAnimation();
     window.setInterval(refreshOwnSongState, OWN_SONG_POLL_MS);
     document.addEventListener("furatic:refresh-personal-votes", refreshOwnSongState);
