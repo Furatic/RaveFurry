@@ -10,7 +10,7 @@
       this.arrow = document.createElement('div');
       this.arrow.className = 'ft-idle-arrow';
       this.arrow.setAttribute('aria-hidden', 'true');
-      this.arrow.innerHTML = '<svg viewBox="0 0 36 36"><path d="M4 18h26m-9-9 9 9-9 9"/></svg>';
+      this.arrow.innerHTML = '<span class="ft-arrow-visual"><svg viewBox="0 0 36 36"><path d="M4 18h26m-9-9 9 9-9 9"/></svg></span>';
       root.append(this.arrow);
       this.reposition = () => {
         if (!this.armed || this.frame) return;
@@ -54,12 +54,15 @@
       if (!rect.width || !rect.height || rect.bottom < 0 || rect.top > height || rect.right < 0 || rect.left > width) {
         this.arrow.classList.remove('is-visible'); return false;
       }
+      const size = this.arrow.offsetWidth || 45;
+      const half = size / 2, gap = 16, edge = 12;
+      const room = size + gap + edge;
       let x, y, angle;
-      if (rect.left >= 52) { x = rect.left - 46; y = rect.top + rect.height / 2 - 18; angle = 0; }
-      else if (width - rect.right >= 52) { x = rect.right + 10; y = rect.top + rect.height / 2 - 18; angle = 180; }
-      else if (rect.bottom + 46 <= height) { x = rect.left + rect.width / 2 - 18; y = rect.bottom + 10; angle = -90; }
-      else { x = rect.left + rect.width / 2 - 18; y = rect.top - 46; angle = 90; }
-      Object.assign(this.arrow.style, {left: Math.max(4, Math.min(width - 40, x)) + 'px', top: Math.max(4, Math.min(height - 40, y)) + 'px', transform: 'rotate(' + angle + 'deg)'});
+      if (rect.left >= room) { x = rect.left - size - gap; y = rect.top + rect.height / 2 - half; angle = 0; }
+      else if (width - rect.right >= room) { x = rect.right + gap; y = rect.top + rect.height / 2 - half; angle = 180; }
+      else if (height - rect.bottom >= room) { x = rect.left + rect.width / 2 - half; y = rect.bottom + gap; angle = -90; }
+      else { x = rect.left + rect.width / 2 - half; y = rect.top - size - gap; angle = 90; }
+      Object.assign(this.arrow.style, {left: Math.max(edge, Math.min(width - size - edge, x)) + 'px', top: Math.max(edge, Math.min(height - size - edge, y)) + 'px', transform: 'rotate(' + angle + 'deg)'});
       this.arrow.classList.add('is-visible');
       return true;
     }
