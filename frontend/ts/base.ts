@@ -445,6 +445,7 @@ export function handleUpdateBanner() {
 
 /** General setup of the page. */
 export function onReady() {
+  if ((window as any).FURATIC_TUTORIAL_PLAYER) return;
   if (localStorageGet('raveberry-theme') == 'light') {
     toggleTheme();
   }
