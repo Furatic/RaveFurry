@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import logging
+import threading
+import time
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
@@ -12,6 +15,10 @@ from core.safe_files import atomic_write_text, retry_file_operation, safe_unlink
 
 LOGGER = logging.getLogger(__name__)
 MAX_QUEUE_FILES = 99
+_worker: threading.Thread | None = None
+_worker_lock = threading.Lock()
+_stop = threading.Event()
+EMPTY_QUEUE_LINES = ["Queue empty", "Add music using our website: furatic.xyz"]
 
 
 def _stringify(value: Any) -> str:
@@ -20,9 +27,75 @@ def _stringify(value: Any) -> str:
     return str(value)
 
 
-def _write_lines(path: Path, lines: Iterable[str]) -> None:
+def _write_lines(path: Path, lines: Iterable[str], *, attempts: int = 8) -> None:
     payload = "\n".join(_stringify(line) for line in lines) + "\n"
-    atomic_write_text(path, payload, encoding="utf-8", logger=LOGGER)
+    atomic_write_text(path, payload, encoding="utf-8", attempts=attempts, logger=LOGGER)
+
+
+def _song_lines(position, duration, title, artist, votes) -> List[str]:
+    lines = [position, duration, title]
+    artist = song_utils.display_artist(artist, title)
+    if artist and artist.strip():
+        lines.append(artist)
+    lines.append(_stringify(votes or 0) + (" vote" if votes == 1 else " votes"))
+    return lines
+
+
+def start() -> None:
+    """Keep the timestamp independent of playback, downloads and queue exports."""
+    global _worker
+    with _worker_lock:
+        if _worker is not None and _worker.is_alive():
+            return
+        _stop.clear()
+        _worker = threading.Thread(target=_tick_loop, name="obs-current-song", daemon=True)
+        _worker.start()
+
+
+def stop() -> None:
+    _stop.set()
+
+
+def _tick_loop() -> None:
+    from django.db import close_old_connections, connections
+    from django.utils import timezone
+    from core import models, redis
+    from core.musiq import audio_tail
+    from core.settings import storage
+
+    deadline = time.monotonic()
+    try:
+        while not _stop.is_set():
+            success = False
+            try:
+                close_old_connections()
+                song = models.CurrentSong.objects.first()
+                duration = audio_tail.effective_duration_for_song(song) if song else 0.0
+                position = 0.0
+                if song:
+                    now = song.last_paused if storage.get("paused") else timezone.now()
+                    position = (now - song.created).total_seconds()
+                if redis.get("alarm_playing"):
+                    from core.musiq import musiq
+                    song = SimpleNamespace(**musiq.get_alarm_metadata())
+                    duration, position = song.duration, 0.0
+                elif redis.get("backup_playing"):
+                    song = SimpleNamespace(title="Backup Stream", artist="", votes=0)
+                    duration, position = 60 * 60 * 24, 0.0
+                success = write_current_song_tick(
+                    song, position, duration,
+                    queue_empty=not song and not models.QueuedSong.objects.exists(),
+                )
+            except Exception:  # pylint: disable=broad-except
+                LOGGER.exception("failed to refresh OBS current song")
+                connections.close_all()
+            now = time.monotonic()
+            # Keep a steady cadence; after a slow write, immediately refresh
+            # from current state instead of replaying a backlog of old seconds.
+            deadline = max(deadline + 1.0, now) if success else now + 0.25
+            _stop.wait(max(0.0, deadline - now))
+    finally:
+        connections.close_all()
 
 
 def _current_position_text(current_song: Dict[str, Any] | None, progress: Any) -> str:
@@ -40,7 +113,9 @@ def write_current_song_tick(
     current_song: Any,
     progress_seconds: float,
     effective_duration: float,
-) -> None:
+    *,
+    queue_empty: bool = False,
+) -> bool:
     """Write only songcurrent.txt for once-per-second OBS timestamp updates."""
     try:
         output_dir = Path(conf.FURATIC_OBS_OUTPUT_DIR).expanduser()
@@ -48,30 +123,26 @@ def write_current_song_tick(
             lambda: output_dir.mkdir(parents=True, exist_ok=True),
             description=f"create OBS export directory {output_dir}",
             logger=LOGGER,
+            attempts=1,
         )
 
         progress_seconds = max(0.0, min(float(effective_duration or 0.0), float(progress_seconds or 0.0)))
         effective_duration = max(0.0, float(effective_duration or 0.0))
 
-        current_lines = [
+        current_lines = _song_lines(
             song_utils.format_seconds(progress_seconds),
             song_utils.format_seconds(effective_duration),
             getattr(current_song, "title", "") or "",
-            song_utils.display_artist(getattr(current_song, "artist", ""), getattr(current_song, "title", "")),
-            _stringify(getattr(current_song, "votes", 0) or 0) + (" vote" if getattr(current_song, "votes", 0) == 1 else " votes"),
-        ]
-        _write_lines(output_dir / "songcurrent.txt", current_lines)
-        if current_song:
-            _write_lines(
-                output_dir / "songgenre.txt",
-                [getattr(current_song, "genre", "") or ""],
-            )
-            _write_lines(
-                output_dir / "songartwork.txt",
-                [getattr(current_song, "artwork_url", "") or ""],
-            )
+            getattr(current_song, "artist", ""),
+            getattr(current_song, "votes", 0),
+        ) if current_song else (EMPTY_QUEUE_LINES if queue_empty else ["", "", "", "", ""])
+        # Retry soon with a fresh timestamp rather than blocking for seconds
+        # in Windows sharing-violation backoff with a stale payload.
+        _write_lines(output_dir / "songcurrent.txt", current_lines, attempts=1)
+        return True
     except Exception:  # pylint: disable=broad-except
         LOGGER.exception("failed to write OBS current song tick")
+        return False
 
 def write_from_state(state: Dict[str, Any]) -> None:
     """Write songcurrent.txt and songqueue*.txt files for OBS / overlays."""
@@ -89,17 +160,20 @@ def write_from_state(state: Dict[str, Any]) -> None:
         )
 
         if current_song:
-            current_lines = [
+            current_lines = _song_lines(
                 _current_position_text(current_song, progress),
                 current_song.get("durationFormatted")
                 or song_utils.format_seconds(current_song.get("duration") or 0),
                 current_song.get("title") or current_song.get("name") or "",
-                song_utils.display_artist(current_song.get("artist"), current_song.get("title") or current_song.get("name")),
-                _stringify(current_song.get("votes") or 0) + (" vote" if current_song.get("votes") == 1 else " votes"),
-            ]
+                current_song.get("artist"),
+                current_song.get("votes"),
+            )
         else:
-            current_lines = ["", "", "", "", ""]
-        _write_lines(output_dir / "songcurrent.txt", current_lines)
+            current_lines = ["", "", "", "", ""] if queue else EMPTY_QUEUE_LINES
+        # Only one writer owns the live timestamp. Concurrent state snapshots
+        # must not replace a newer tick with an older progress value.
+        if _worker is None or not _worker.is_alive():
+            _write_lines(output_dir / "songcurrent.txt", current_lines)
         _write_lines(
             output_dir / "songgenre.txt",
             [(current_song or {}).get("genre") or ""],
