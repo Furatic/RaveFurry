@@ -6,6 +6,7 @@ import {
 
 let musicRequestInFlight = false;
 const completedDownloads = new Set<number>();
+const pendingDownloads = new Map<number, {query: string, message: string}>();
 const notificationStartedAt = Date.now() / 1000;
 let notificationCursor = 0;
 let notificationPollRunning = false;
@@ -13,9 +14,26 @@ let notificationPollingStarted = false;
 
 function requestAccepted(response, query) {
   if (response.pending) {
-    if (!completedDownloads.has(Number(response.key))) infoToast('Downloading your song…', '"' + query + '"', 0);
+    const key = Number(response.key);
+    if (!completedDownloads.has(key)) {
+      pendingDownloads.set(key, {query, message: response.message});
+      infoToast('Downloading your song…', '"' + query + '"', 0);
+      reconcileDownloadNotifications();
+    }
   } else {
     successToast(response.message, '"' + query + '"');
+  }
+}
+
+/** Queue state also confirms completion if the transient notification was missed. */
+export function reconcileDownloadNotifications() {
+  for (const [key, request] of pendingDownloads) {
+    const ready = state?.currentSong?.queueKey === key ||
+      state?.songQueue?.some(song => song.id === key && Boolean(song.internalUrl));
+    if (!ready) continue;
+    pendingDownloads.delete(key);
+    completedDownloads.add(key);
+    successToast(request.message, '"' + request.query + '"');
   }
 }
 
@@ -32,10 +50,16 @@ async function pollDownloadNotifications() {
     for (const item of result.notifications || []) {
       if (!String(item.kind).startsWith('song_request_') || item.createdAt < notificationStartedAt) continue;
       if (item.kind === 'song_request_ready') {
-        completedDownloads.add(Number(item.requestKey));
+        const key = Number(item.requestKey);
+        pendingDownloads.delete(key);
+        if (completedDownloads.has(key)) continue;
+        completedDownloads.add(key);
         successToast(item.message, '"' + item.title + '"');
       } else {
-        if (!item.message.includes('trying again in 30 seconds')) completedDownloads.add(Number(item.requestKey));
+        if (!item.message.includes('trying again in 30 seconds')) {
+          completedDownloads.add(Number(item.requestKey));
+          pendingDownloads.delete(Number(item.requestKey));
+        }
         errorToast(item.message, '"' + item.title + '"');
       }
     }
@@ -111,6 +135,7 @@ export function showPauseButton() {
  */
 export function requestArchivedMusic(key, query,
     platform = localStorageGet('platform')) {
+  infoToast(playlistEnabled() ? 'searching...' : 'Downloading your song…', '"' + query + '"', playlistEnabled() ? 2000 : 0);
   $.post(urls['musiq']['request-music'],
       {
         key: key,
@@ -122,7 +147,6 @@ export function requestArchivedMusic(key, query,
   }).fail(function(response) {
     errorToast(response.responseText, '"' + query + '"');
   });
-  infoToast(playlistEnabled() ? 'searching...' : 'Downloading your song…', '"' + query + '"', playlistEnabled() ? 2000 : 0);
   $('#music-input').val('').trigger('change');
   disablePlaylistMode();
 }
@@ -137,6 +161,7 @@ export function requestNewMusic(query, platform = localStorageGet('platform')) {
   }
   musicRequestInFlight = true;
 
+  infoToast(playlistEnabled() ? 'searching...' : 'Downloading your song…', '"' + query + '"', playlistEnabled() ? 2000 : 0);
   $.post(urls['musiq']['request-music'],
       {
         query: query,
@@ -149,7 +174,6 @@ export function requestNewMusic(query, platform = localStorageGet('platform')) {
   }).always(function() {
     musicRequestInFlight = false;
   });
-  infoToast(playlistEnabled() ? 'searching...' : 'Downloading your song…', '"' + query + '"', playlistEnabled() ? 2000 : 0);
   $('#music-input').val('').trigger('change');
   disablePlaylistMode();
 }
