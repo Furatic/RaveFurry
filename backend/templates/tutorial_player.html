@@ -1,0 +1,19 @@
+{% extends 'musiq_embed.html' %}
+{% load static %}
+{% block js %}
+    {{ block.super }}
+    window.FURATIC_TUTORIAL_PLAYER = true;
+    window.FURATIC_TUTORIAL_LESSON = "{{ tutorial_lesson|escapejs }}";
+    window.FURATIC_TUTORIAL_ART_ROOT = "{% static 'tutorial/' %}";
+{% endblock %}
+{% block player_bundle %}
+    <script src="{% static 'tutorial/player.js' %}?v=3" defer></script>
+{% endblock %}
+{% block content %}
+    {{ block.super }}
+    <style>
+      /* The player itself inherits every live style unchanged. Only the
+         instructional focus ring is specific to practice. */
+      .furatic-tutorial-target { outline: 2px solid #92d9ff !important; outline-offset: 3px; }
+    </style>
+{% endblock %}
