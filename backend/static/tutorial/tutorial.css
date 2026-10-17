@@ -31,8 +31,11 @@
 .ft-small { color: var(--muted, rgba(238,244,255,.72)); font-size: 12px; line-height: 1.5; }
 .ft-hub > .ft-button { width: 100%; }
 .ft-lesson { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
-.ft-narrator { display: flex; align-items: flex-start; gap: 12px; padding: 0 22px 14px; flex: 0 0 auto; }
-.ft-narrator img { width: 55px; height: 55px; flex: 0 0 55px; object-fit: contain; }
+.ft-narrator { display: flex; align-items: center; gap: 12px; padding: 0 22px 14px; flex: 0 0 auto; }
+.ft-narrator-portrait { position: relative; width: 80px; height: 80px; flex: 0 0 80px; overflow: hidden; }
+/* Keep the PNG's transparent padding from making the character look small. */
+.ft-narrator img { position: absolute; left: 50%; top: 50%; width: 112px; height: 112px; max-width: none; max-height: none;
+  object-fit: contain; transform: translate(-50%, -50%); }
 .ft-narrator p { font-size: 14px; line-height: 1.55; margin: 0; }
 .ft-player-region { position: relative; flex: 1 1 auto; min-height: 120px; margin: 0 10px; }
 .ft-player { display: block; width: 100%; height: 100%; border: 0; opacity: 0; transition: opacity 300ms ease; }
@@ -49,19 +52,24 @@
   .ft-topics .ft-button { min-height: 52px; }
   .ft-narrator { padding: 0 14px 10px; gap: 9px; }
   .ft-narrator p { font-size: 12px; }
-  .ft-narrator img { width: 42.5px; height: 42.5px; flex-basis: 42.5px; }
+  .ft-narrator-portrait { width: 64px; height: 64px; flex-basis: 64px; }
+  .ft-narrator img { width: 88px; height: 88px; }
   .ft-player-region { margin: 0; }
   .ft-footer { padding: 8px 12px 2px; gap: 6px; flex-wrap: wrap; }
   .ft-footer .ft-button { padding: 9px 11px; font-size: 12px; min-height: 42px; }
   .ft-practice-note { font-size: 10px; margin-bottom: 8px; }
 }
 .ft-dialog.ft-short .ft-narrator { max-height: 23%; overflow: auto; }
-.ft-idle-arrow { position: fixed; width: 36px; height: 36px; z-index: 10000; pointer-events: none; opacity: 0;
+.ft-idle-arrow { position: fixed; width: 45px; height: 45px; z-index: 10000; pointer-events: none; opacity: 0;
   transition: opacity 260ms ease; }
 .ft-idle-arrow.is-visible { opacity: 1; }
+.ft-arrow-visual { display: block; position: relative; width: 100%; height: 100%; transform-origin: right center; }
+.ft-arrow-visual::before { content: ''; position: absolute; inset: -8px; border-radius: 50%;
+  background: rgba(5,12,26,.9); box-shadow: 0 3px 14px rgba(0,0,0,.35);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 .ft-idle-arrow svg { display: block; width: 100%; height: 100%; fill: none; stroke: #92d9ff; stroke-width: 3;
-  stroke-linecap: round; stroke-linejoin: round; transform-origin: right center; }
-.ft-idle-arrow.is-visible svg { animation: ft-arrow-breathe 2.4s ease-in-out infinite; }
+  position: relative; stroke-linecap: round; stroke-linejoin: round; }
+.ft-idle-arrow.is-visible .ft-arrow-visual { animation: ft-arrow-breathe 2.4s ease-in-out infinite; }
 @keyframes ft-arrow-breathe { 0%, 100% { transform: scale(.82); } 50% { transform: scale(1); } }
-@media (prefers-reduced-motion: reduce) { .ft-idle-arrow { transition: none; } .ft-idle-arrow.is-visible svg { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .ft-idle-arrow { transition: none; } .ft-idle-arrow.is-visible .ft-arrow-visual { animation: none; } }
 @media (prefers-reduced-motion: reduce) { .ft-dialog *, .ft-dialog *::before, .ft-dialog *::after { transition: none !important; animation: none !important; } }
