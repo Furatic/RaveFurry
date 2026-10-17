@@ -1768,8 +1768,10 @@
     let ownVoteTooltipAnchor = null;
 
     try {
-        window.localStorage.removeItem("furatic-owned-song-pending-v1");
-        window.localStorage.removeItem("furatic-owned-song-claims-v1");
+        if (!window.FURATIC_TUTORIAL_PLAYER) {
+            window.localStorage.removeItem("furatic-owned-song-pending-v1");
+            window.localStorage.removeItem("furatic-owned-song-claims-v1");
+        }
     } catch (_error) {
         // ignore
     }
@@ -2455,8 +2457,36 @@
         }
     }
 
+    function applyOwnSongState(data) {
+        document.dispatchEvent(new CustomEvent("furatic:personal-votes", {detail: data.myVotes || []}));
+        ownQueueKeys.clear();
+        if (Array.isArray(data.songs)) {
+            data.songs.forEach(function (song) {
+                const key = Number(song.queueKey);
+                if (Number.isFinite(key) && key > 0) {
+                    ownQueueKeys.add(key);
+                }
+            });
+        }
+
+        const nextCurrent = Number(data.currentSongQueueKey);
+        ownCurrentSongKey = Number.isFinite(nextCurrent) && nextCurrent > 0 ? nextCurrent : null;
+
+        Array.from(pendingRemovals).forEach(function (key) {
+            if (!ownQueueKeys.has(key)) {
+                pendingRemovals.delete(key);
+            }
+        });
+
+        scheduleDecorate();
+    }
+
     let ownStateInFlight = false;
     async function refreshOwnSongState() {
+        if (window.FURATIC_TUTORIAL_PLAYER) {
+            applyOwnSongState(window.furaticTutorialOwnState || {});
+            return;
+        }
         if (ownStateInFlight) return;
         ownStateInFlight = true;
         const abort = new AbortController();
@@ -2481,27 +2511,7 @@
 
             const data = await response.json();
 
-            document.dispatchEvent(new CustomEvent("furatic:personal-votes", {detail: data.myVotes || []}));
-            ownQueueKeys.clear();
-            if (Array.isArray(data.songs)) {
-                data.songs.forEach(function (song) {
-                    const key = Number(song.queueKey);
-                    if (Number.isFinite(key) && key > 0) {
-                        ownQueueKeys.add(key);
-                    }
-                });
-            }
-
-            const nextCurrent = Number(data.currentSongQueueKey);
-            ownCurrentSongKey = Number.isFinite(nextCurrent) && nextCurrent > 0 ? nextCurrent : null;
-
-            Array.from(pendingRemovals).forEach(function (key) {
-                if (!ownQueueKeys.has(key)) {
-                    pendingRemovals.delete(key);
-                }
-            });
-
-            scheduleDecorate();
+            applyOwnSongState(data);
         } catch (_error) {
             // silent retry on next poll
         } finally {
@@ -2643,7 +2653,7 @@
     refreshOwnSongState();
     scheduleDecorate();
     ensureOwnedOrbAnimation();
-    window.setInterval(refreshOwnSongState, OWN_SONG_POLL_MS);
+    if (!window.FURATIC_TUTORIAL_PLAYER) window.setInterval(refreshOwnSongState, OWN_SONG_POLL_MS);
     document.addEventListener("furatic:refresh-personal-votes", refreshOwnSongState);
 
     if (window.jQuery) {
