@@ -1,30 +1,31 @@
 {% load static %}
-<dialog id="furatic-tutorial" class="ft-dialog" aria-modal="true" aria-labelledby="ft-title" data-art-root="{% static 'tutorial/' %}">
-  <svg class="ft-symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <symbol id="ft-music" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13M9 8l11-2"/><ellipse cx="6" cy="18" rx="3" ry="2.5"/><ellipse cx="17" cy="16" rx="3" ry="2.5"/></symbol>
-      <symbol id="ft-vote" viewBox="0 0 24 24"><path d="m5 10 7-7 7 7M12 3v14M5 21h14"/></symbol>
-      <symbol id="ft-stack" viewBox="0 0 24 24"><rect x="3" y="3" width="14" height="14" rx="4"/><path d="M8 21h9a4 4 0 0 0 4-4V8M7 10h6M10 7v6"/></symbol>
-      <symbol id="ft-queue" viewBox="0 0 24 24"><path d="M9 6h12M9 12h8M9 18h4M3 6h.01M3 12h.01M3 18h.01m14-2 4 3-4 3"/></symbol>
-      <symbol id="ft-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></symbol>
-      <symbol id="ft-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
-      <symbol id="ft-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
-      <symbol id="ft-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
-    </defs>
-  </svg>
+<dialog id="furatic-tutorial" class="ft-dialog" aria-modal="true" aria-labelledby="ft-title">
   <div class="ft-panel">
     <header class="ft-header">
-      <button type="button" class="ft-back" id="ft-back" aria-label="Back to all tutorials" hidden><svg class="ft-icon" aria-hidden="true"><use href="#ft-arrow"/></svg><span>All topics</span></button>
-      <span class="ft-wordmark" id="ft-wordmark">FURATIC <span> / </span> YOUR GUIDE</span>
-      <button type="button" class="ft-close" id="ft-close" aria-label="Close tutorial" autofocus><svg class="ft-icon" aria-hidden="true"><use href="#ft-x"/></svg></button>
+      <h2 id="ft-title" tabindex="-1">Welcome to FURATIC!</h2>
+      <button type="button" class="ft-button ft-close" id="ft-close" aria-label="Close tutorial" autofocus><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
     </header>
-    <div class="ft-viewport" id="ft-viewport">
-      <div class="ft-view" id="ft-view"></div>
+    <div class="ft-hub" id="ft-hub">
+      <p>Would you like to learn how these features work?</p>
+      <div class="ft-topics">
+        <button type="button" class="ft-button" data-topic="adding">Adding music</button>
+        <button type="button" class="ft-button" data-topic="voting">Voting on songs</button>
+        <button type="button" class="ft-button" data-topic="multiple">Adding several songs</button>
+        <button type="button" class="ft-button" data-topic="prequeue">How the pre-queue works</button>
+      </div>
+      <p class="ft-small">You can close this window at any time and reopen it using the question mark above the TV button.</p>
+      <button type="button" class="ft-button" id="ft-leave">Add music now</button>
     </div>
-    <footer class="ft-footer">
-      <span><span class="ft-status-dot" aria-hidden="true"></span> Tutorial demo</span>
-      <button type="button" id="ft-leave" class="ft-text-button">Add music now <span aria-hidden="true">↗</span></button>
-    </footer>
+    <section class="ft-lesson" id="ft-lesson" hidden>
+      <div class="ft-narrator"><img src="{% static 'tutorial/narrator.png' %}" alt="" width="44" height="44"><p id="ft-instruction" aria-live="polite" aria-atomic="true"></p></div>
+      <div class="ft-player-region" id="ft-player-region"><p id="ft-loading" role="status">Loading the player…</p></div>
+      <footer class="ft-footer">
+        <button type="button" class="ft-button" id="ft-back">All tutorials</button>
+        <span id="ft-step" class="ft-small"></span>
+        <button type="button" class="ft-button" id="ft-next" hidden>Continue</button>
+      </footer>
+      <p class="ft-practice-note">Practice only. No songs or votes are submitted.</p>
+    </section>
   </div>
 </dialog>
-<script src="{% static 'tutorial/tutorial.js' %}?v=1" defer></script>
+<script src="{% static 'tutorial/tutorial.js' %}?v=3" defer></script>
