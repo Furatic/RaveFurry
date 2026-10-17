@@ -1709,7 +1709,7 @@
           {opacity: 1, filter: "blur(0px)", transform: "scale(1)"}
         ], {duration: 900, easing: "cubic-bezier(.22,1,.36,1)", fill: "both"});
         await entrance.finished.catch(() => undefined);
-        await new Promise(resolve => window.setTimeout(resolve, 300));
+        await new Promise(resolve => window.setTimeout(resolve, 150));
         entrance.cancel();
         let flight = null, resized = false;
         const retarget = () => {
