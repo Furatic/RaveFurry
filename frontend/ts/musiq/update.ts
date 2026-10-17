@@ -1,7 +1,7 @@
 import {registerSpecificState} from '../base';
 import {getStoredVote, paintVotes} from './vote-state';
 import {initPanels, updateAutoPreview, refreshOpenHistory} from './panels';
-import {showPlayButton, showPauseButton} from './buttons';
+import {showPlayButton, showPauseButton, reconcileDownloadNotifications} from './buttons';
 import {syncAudioStream} from './audio';
 import {displayArtist} from './display-name';
 
@@ -460,6 +460,7 @@ export function updateState(newState) {
   promotingOccurrence = null;
   finishPromotion(promotion);
   syncClosingBanner(state);
+  reconcileDownloadNotifications();
 
   paintVotes();
   if (!oldState || JSON.stringify(oldState.songQueue.map(s => s.occurrenceId)) !== JSON.stringify(state.songQueue.map(s => s.occurrenceId)) ||
