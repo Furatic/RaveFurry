@@ -16,7 +16,7 @@
       <p class="ft-small">You can close this window at any time and reopen it using the question mark above the TV button.</p>
     </div>
     <section class="ft-lesson" id="ft-lesson" hidden>
-      <div class="ft-narrator"><img src="{% static 'tutorial/narrator.png' %}" alt="" width="55" height="55"><p id="ft-instruction" aria-live="polite" aria-atomic="true"></p></div>
+      <div class="ft-narrator"><span class="ft-narrator-portrait" aria-hidden="true"><img src="{% static 'tutorial/narrator.png' %}" alt="" width="112" height="112"></span><p id="ft-instruction" aria-live="polite" aria-atomic="true"></p></div>
       <div class="ft-player-region" id="ft-player-region"><p id="ft-loading" role="status">Loading the player…</p></div>
       <footer class="ft-footer">
         <button type="button" class="ft-button" id="ft-back">All tutorials</button>
@@ -27,5 +27,5 @@
     </section>
   </div>
 </dialog>
-<script src="{% static 'tutorial/cues.js' %}?v=4" defer></script>
-<script src="{% static 'tutorial/tutorial.js' %}?v=4" defer></script>
+<script src="{% static 'tutorial/cues.js' %}?v=5" defer></script>
+<script src="{% static 'tutorial/tutorial.js' %}?v=5" defer></script>
