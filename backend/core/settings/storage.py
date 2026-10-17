@@ -58,7 +58,7 @@ defaults = {
     "request_cooldown_seconds": 0.0,
     "max_song_duration_seconds": 300.0,
     "site_mode": "event",
-    "maintenance_restart_song_interval": 20,
+    "maintenance_restart_song_interval": 70,
     "songs_since_maintenance_restart": 0,
     "silence_tail_skip_enabled": True,
     "silence_tail_threshold_db": -45.0,
