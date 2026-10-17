@@ -80,6 +80,7 @@ function desktopLayout(): boolean {
 }
 
 function parentPanels() {
+  if ((window as any).FURATIC_TUTORIAL_PLAYER) return (window as any).furaticTutorialPanels || null;
   try { return window.parent !== window ? (window.parent as any).furaticPlayerPanels : null; } catch (_error) { return null; }
 }
 
