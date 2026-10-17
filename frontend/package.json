@@ -38,7 +38,7 @@
     "webpack-cli": "^4.5.0"
   },
   "scripts": {
-    "js": "rm -f ../backend/static/bundle.js && tsc && webpack --mode production && cp dist/bundle.js ../backend/static/",
+    "js": "rm -f ../backend/static/bundle.js && tsc && webpack --mode production && cp dist/bundle.js ../backend/static/ && webpack --config tutorial.webpack.config.js --mode production",
     "css": "sass --load-path=node_modules scss/style.scss dist/style.full.css && purgecss -c purgecss.config.js --css dist/style.full.css -o dist/style.purged.css && postcss dist/style.purged.css > dist/style.css && cp dist/style.css ../backend/static/",
     "fonts": "python -c \"import os,glob,shutil; dst=os.path.join('..','backend','static'); os.makedirs(dst, exist_ok=True); src=os.path.join('node_modules','@fortawesome','fontawesome-free','webfonts'); exts=('.woff2','.woff','.ttf'); [shutil.copy2(f,dst) for f in glob.glob(os.path.join(src,'fa-*')) if f.endswith(exts)]\"",
     "watch-js": "rm -f ../backend/static/bundle.js && mkdir -p dist && touch dist/bundle.js && ln dist/bundle.js ../backend/static/bundle.js && tsc --watch & webpack --mode development --no-devtool --watch",
