@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
+import unicodedata
 from types import SimpleNamespace
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
@@ -19,6 +21,12 @@ _worker: threading.Thread | None = None
 _worker_lock = threading.Lock()
 _stop = threading.Event()
 EMPTY_QUEUE_LINES = ["Queue empty", "Add music using our website: furatic.xyz"]
+OBS_NAME_LIMIT = 24
+_OBS_ANNOTATION = re.compile(
+    r"^(?:official\b|unofficial\b|music video\b|lyrics?\b|audio\b|video\b|"
+    r"visuali[sz]er\b|live\b|performance\b|remaster(?:ed)?\b|"
+    r"hd\b|hq\b|[48]k\b|\d{3,4}p\b)", re.IGNORECASE,
+)
 
 
 def _stringify(value: Any) -> str:
@@ -32,11 +40,71 @@ def _write_lines(path: Path, lines: Iterable[str], *, attempts: int = 8) -> None
     atomic_write_text(path, payload, encoding="utf-8", attempts=attempts, logger=LOGGER)
 
 
+def _obs_text(value: Any) -> str:
+    return " ".join(unicodedata.normalize("NFKC", str(value or "")).split())
+
+
+def _clean_obs_names(title: Any, artist: Any) -> tuple[str, str]:
+    """Clean display-only credits without changing stored or queued metadata."""
+    title, artist = _obs_text(title), _obs_text(artist)
+    raw_title = title
+    credits = []
+    seen = set()
+    for credit in re.split(r"[,;]", artist):
+        credit = re.sub(r"\s*[-–—]\s*Topic$|VEVO$", "", credit, flags=re.IGNORECASE).strip()
+        key = re.sub(r"[\W_]+", "", credit.casefold()) or credit.casefold()
+        if key and key not in seen:
+            credits.append(credit)
+            seen.add(key)
+    artist = ", ".join(credits)
+
+    def annotation(match):
+        label = match.group(1) if match.group(1) is not None else match.group(2)
+        credit = re.sub(r"^(?:feat(?:uring)?\.?|ft\.?|with)\s+", "", label.strip(), flags=re.IGNORECASE)
+        credit_key = re.sub(r"[\W_]+", "", credit.casefold()) or credit.casefold()
+        return " " if _OBS_ANNOTATION.match(label.strip()) or credit_key in seen else match.group(0)
+
+    # Remove upload/performance labels; retain meaningful title parentheses.
+    previous = None
+    while previous != title:
+        previous = title
+        title = re.sub(r"\(([^()]*)\)|\[([^\[\]]*)\]", annotation, title)
+    title = _obs_text(title)
+    segments = re.split(r"\s+[-–—|]\s+", title)
+    if len(segments) > 1 and _OBS_ANNOTATION.match(segments[-1]):
+        title = title[:list(re.finditer(r"\s+[-–—|]\s+", title))[-1].start()]
+    title = title or raw_title
+
+    original_title = title
+    # Use the full credit before individual names (e.g. Earth, Wind & Fire).
+    for credit in sorted(set([artist] + credits) - {""}, key=lambda value: (-len(value), value.casefold())):
+        name = re.escape(credit).replace(r"\ ", r"\s+")
+        previous = None
+        while previous != title:
+            previous = title
+            without_credit = re.sub(
+                rf"^\s*{name}(?!\w)(?:\s*[-–—|:,]\s*|\s+)", "", title,
+                flags=re.IGNORECASE,
+            )
+            without_credit = re.sub(
+                rf"(?:\s+[-–—|:,]\s*|\s+by\s+){name}\s*$", "", without_credit,
+                flags=re.IGNORECASE,
+            ).strip()
+            if not without_credit:
+                break
+            title = without_credit
+    return _obs_text(title or original_title), artist
+
+
+def _obs_name_line(value: str) -> str:
+    return value if len(value) <= OBS_NAME_LIMIT else value[:OBS_NAME_LIMIT - 1].rstrip() + "…"
+
+
 def _song_lines(position, duration, title, artist, votes) -> List[str]:
-    lines = [position, duration, title]
-    artist = song_utils.display_artist(artist, title)
-    if artist and artist.strip():
-        lines.append(artist)
+    title, artist = _clean_obs_names(title, artist)
+    lines = [position, duration, _obs_name_line(title)]
+    if artist:
+        lines.append(_obs_name_line(artist))
     lines.append(_stringify(votes or 0) + (" vote" if votes == 1 else " votes"))
     return lines
 
