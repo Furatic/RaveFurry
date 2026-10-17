@@ -83,12 +83,40 @@ function parentPanels() {
   try { return window.parent !== window ? (window.parent as any).furaticPlayerPanels : null; } catch (_error) { return null; }
 }
 
-type PreQueueStart = {bounds: DOMRect, preview: DOMRect, labels: {node: HTMLElement, bounds: DOMRect}[]};
+type Artwork = {node: HTMLElement, occurrence: string, bounds: DOMRect};
+type PreQueueStart = {bounds: DOMRect, preview: DOMRect, content: DOMRect, artwork: Artwork[], labels: {node: HTMLElement, bounds: DOMRect}[]};
+let previewObserver: ResizeObserver;
+let preQueueMorphing = false;
+
+function fitAutoPreview() {
+  const preview = document.getElementById('auto-queue-preview');
+  if (!preview || preQueueMorphing || document.getElementById('auto-queue-dock').classList.contains('is-expanded')) return;
+  const vertical = desktopLayout();
+  const space = vertical ? preview.clientHeight : preview.clientWidth;
+  const tile = vertical ? preview.clientWidth : 44;
+  if (!space || !tile) return;
+  const style = getComputedStyle(preview);
+  const gap = parseFloat(vertical ? style.rowGap : style.columnGap) || 0;
+  const count = Math.min(10, Math.max(0, Math.floor((space + gap) / (tile + gap))));
+  Array.from(preview.children).forEach((node: HTMLElement, index) => { node.hidden = index >= count; });
+}
+
+function captureArtwork(): Artwork[] {
+  const expanded = document.getElementById('auto-queue-dock').classList.contains('is-expanded');
+  const container = document.getElementById(expanded ? 'auto-drawer' : 'auto-queue-preview');
+  const clip = container.getBoundingClientRect();
+  return Array.from(container.querySelectorAll<HTMLElement>(expanded ? '.queue-artwork' : '.auto-queue-thumbnail'))
+      .map(node => ({node, bounds: node.getBoundingClientRect(),
+        occurrence: node.closest<HTMLElement>('[data-occurrence-id]')?.dataset.occurrenceId}))
+      .filter(item => item.occurrence && item.bounds.width > 0 && item.bounds.height > 0 &&
+        item.bounds.top >= clip.top && item.bounds.bottom <= clip.bottom);
+}
 
 function capturePreQueue(): PreQueueStart {
   const dock = document.getElementById('auto-queue-dock');
   const preview = document.getElementById('auto-queue-preview');
   return {bounds: dock.getBoundingClientRect(), preview: preview.getBoundingClientRect(),
+    content: document.getElementById('auto-drawer').getBoundingClientRect(), artwork: captureArtwork(),
     labels: Array.from(dock.querySelectorAll<HTMLElement>('#auto-queue-toggle > strong, #auto-queue-toggle > i'))
         .map(node => ({node, bounds: node.getBoundingClientRect()}))};
 }
@@ -103,15 +131,46 @@ async function morphPreQueue(start: PreQueueStart, opening: boolean, reduced: bo
   const timing = {duration: 600, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'both' as FillMode};
   const animations: Animation[] = [];
   const savedPreviewStyle = preview.getAttribute('style');
+  const savedContentStyle = content.getAttribute('style');
+  const artworkLayers: HTMLElement[] = [];
+  const hiddenArtwork: {node: HTMLElement, visibility: string}[] = [];
   const destinations = start.labels.map(label => ({...label, destination: label.node.getBoundingClientRect()}));
   if (!reduced && typeof dock.animate === 'function') {
-    // Animate the existing surface's width; its text and artwork never stretch.
-    animations.push(dock.animate([{width: start.bounds.width + 'px'}, {width: end.width + 'px'}], timing));
+    // Keep the expanded rows at their original geometry while the surface
+    // narrows, so artwork and text do not reflow on every animation frame.
+    const contentBounds = opening ? content.getBoundingClientRect() : start.content;
+    const contentOrigin = opening ? end : start.bounds;
+    Object.assign(content.style, {position: 'absolute', left: contentBounds.left - contentOrigin.left + 'px',
+      top: contentBounds.top - contentOrigin.top + 'px', width: contentBounds.width + 'px', height: contentBounds.height + 'px'});
+    fitAutoPreview();
+    const destinationArtwork = captureArtwork();
+    preQueueMorphing = true;
     const previewBounds = opening ? start.preview : preview.getBoundingClientRect();
-    if (opening && previewBounds.width) {
-      Object.assign(preview.style, {position: 'absolute', display: 'grid', left: previewBounds.left - start.bounds.left + 'px',
-        top: previewBounds.top - start.bounds.top + 'px', width: previewBounds.width + 'px', height: previewBounds.height + 'px'});
+    if (previewBounds.width) {
+      const origin = opening ? start.bounds : end;
+      Object.assign(preview.style, {position: 'absolute', display: 'grid', left: previewBounds.left - origin.left + 'px',
+        top: previewBounds.top - origin.top + 'px', width: previewBounds.width + 'px', height: previewBounds.height + 'px'});
     } else preview.style.display = 'grid';
+    // Animate only after measuring the final compact preview.
+    animations.push(dock.animate([{width: start.bounds.width + 'px'}, {width: end.width + 'px'}], timing));
+    start.artwork.forEach(source => {
+      const destination = destinationArtwork.find(item => item.occurrence === source.occurrence);
+      const layer = source.node.cloneNode(true) as HTMLElement;
+      layer.removeAttribute('id'); layer.removeAttribute('href'); layer.setAttribute('aria-hidden', 'true');
+      layer.removeAttribute('data-occurrence-id');
+      layer.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'));
+      Object.assign(layer.style, {position: 'fixed', display: 'grid', left: source.bounds.left + 'px', top: source.bounds.top + 'px',
+        width: source.bounds.width + 'px', height: source.bounds.height + 'px', minWidth: '0', maxWidth: 'none',
+        margin: '0', objectFit: 'cover', borderRadius: '8px', overflow: 'hidden', zIndex: '20', pointerEvents: 'none',
+        transformOrigin: 'top left', transition: 'none', animation: 'none'});
+      document.body.appendChild(layer); artworkLayers.push(layer);
+      [source.node, destination?.node].filter(Boolean).forEach(node => {
+        hiddenArtwork.push({node, visibility: node.style.visibility}); node.style.visibility = 'hidden';
+      });
+      animations.push(layer.animate(destination ? [{transform: 'translate(0px, 0px) scale(1, 1)'},
+        {transform: `translate(${destination.bounds.left - source.bounds.left}px, ${destination.bounds.top - source.bounds.top}px) scale(${destination.bounds.width / source.bounds.width}, ${destination.bounds.height / source.bounds.height})`}] :
+        [{opacity: 1}, {opacity: 0, offset: .6}, {opacity: 0}], timing));
+    });
     animations.push(preview.animate(opening ?
       [{opacity: 1}, {opacity: 0, offset: .35}, {opacity: 0}] :
       [{opacity: 0}, {opacity: 0, offset: .4}, {opacity: 1}], timing));
@@ -133,8 +192,13 @@ async function morphPreQueue(start: PreQueueStart, opening: boolean, reduced: bo
   window.removeEventListener('resize', resize);
   animations.forEach(animation => animation.cancel());
   dock.style.transition = savedTransition;
+  artworkLayers.forEach(layer => layer.remove());
+  hiddenArtwork.forEach(({node, visibility}) => { node.style.visibility = visibility; });
   if (savedPreviewStyle === null) preview.removeAttribute('style'); else preview.setAttribute('style', savedPreviewStyle);
+  if (savedContentStyle === null) content.removeAttribute('style'); else content.setAttribute('style', savedContentStyle);
   if (!opening) content.hidden = true;
+  preQueueMorphing = false;
+  fitAutoPreview();
 }
 
 
@@ -187,6 +251,10 @@ export function initPanels(renderer: (songs: any[]) => void) {
   if (!document.getElementById('auto-drawer')) return;
   renderHistory = renderer;
   controller = new DrawerController(transition);
+  if (typeof ResizeObserver !== 'undefined') {
+    previewObserver = new ResizeObserver(fitAutoPreview);
+    previewObserver.observe(document.getElementById('auto-queue-preview'));
+  }
   (window as any).furaticQueuePanels = {
     close: () => controller.show(null),
     current: () => controller.active && document.getElementById(controller.active + '-drawer').classList.contains('is-open') ? controller.active : null,
@@ -200,6 +268,7 @@ export function initPanels(renderer: (songs: any[]) => void) {
       if (autoDrawer.parentElement !== home) home.insertBefore(autoDrawer, desktop ? null : document.getElementById('history-drawer'));
       document.getElementById('main-queue-scroll').toggleAttribute('inert', !desktop && Boolean(controller.active));
       parentPanels()?.setDrawer((window as any).furaticQueuePanels.current());
+      fitAutoPreview();
     },
     setSpace: (space: number) => document.documentElement.style.setProperty('--desktop-side-space', space + 'px'),
     setVisibleHeight: (height: number) => document.documentElement.style.setProperty('--furatic-visible-height', height + 'px'),
@@ -230,7 +299,7 @@ export function initPanels(renderer: (songs: any[]) => void) {
 export function updateAutoPreview(songs: any[]) {
   const preview = document.getElementById('auto-queue-preview');
   if (!preview) return;
-  const first = songs.slice(0, 6);
+  const first = songs.slice(0, 10);
   preview.classList.toggle('is-empty', first.length === 0);
   const key = JSON.stringify(first.map(s => [s.occurrenceId, s.artworkUrl, s.artist, s.title]));
   if (preview.dataset.previewKey !== key) {
@@ -238,6 +307,7 @@ export function updateAutoPreview(songs: any[]) {
     preview.replaceChildren(...first.map(song => {
       const link = document.createElement('a');
       link.className = 'auto-queue-thumbnail';
+      link.dataset.occurrenceId = String(song.occurrenceId || song.id);
       link.title = displayName(song);
       link.setAttribute('aria-label', link.title);
       if (/^https?:\/\//i.test(song.externalUrl)) link.href = song.externalUrl;
@@ -255,6 +325,7 @@ export function updateAutoPreview(songs: any[]) {
   }
   document.getElementById('auto-queue-count').textContent = String(songs.length);
   document.getElementById('auto-queue-empty').hidden = songs.length > 0;
+  fitAutoPreview();
 }
 
 export function refreshOpenHistory() {
