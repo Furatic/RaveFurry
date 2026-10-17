@@ -184,15 +184,16 @@ export function requestNewMusic(query, platform = localStorageGet('platform')) {
  * @param {string} url the external url that will be linked in the modal
  */
 function showTitleModal(element, duration, url) {
-  const contents = element.contents();
+  const scrollingContent = element.children('.furatic-title-content');
+  const contents = (scrollingContent.length ? scrollingContent : element).contents();
   const modalText = $('#title-modal .modal-text');
   modalText.empty();
   if (contents.length > 1) {
-    modalText.append($('<strong/>').text(contents.get(0).innerText));
+    modalText.append($('<strong/>').text($(contents.get(0)).text()));
     // cut the character that connects artist and title
-    modalText.append($('<span/>').text(contents.get(1).data.substring(3)));
+    modalText.append($('<span/>').text($(contents.get(1)).text().substring(3)));
   } else {
-    modalText.append($('<span/>').text(contents.get(0).data));
+    modalText.append($('<span/>').text(contents.text()));
   }
   modalText.append($('<span/>').text(duration));
   $('#external-link').attr('href', url);
