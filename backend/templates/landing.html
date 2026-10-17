@@ -1,3 +1,4 @@
+{% load static %}
 <!doctype html>
 <html lang="en">
   <head>
@@ -837,7 +838,7 @@
       .player-layout.is-tv-open .control-dock .tv-corner-button { transform: none; }
       .logo-slot { display: none; }
       @media (min-width: 1581px) {
-        .player-layout.is-tv-open .logo-slot { display: block; position: absolute; right: 74px; top: 252px; width: 150px; }
+        .player-layout.is-tv-open .logo-slot { display: block; position: absolute; right: 74px; top: 310px; width: 150px; }
         .player-layout.is-tv-open .logo-slot .brand { position: static; width: 100%; }
       }
       @media (max-width: 1580px) {
@@ -864,15 +865,15 @@
         .tv-video { width: 100%; max-width: 100%; }
         #queue-player-frame { transition: height 600ms cubic-bezier(.4,0,.2,1); }
       }
-      @media (max-width: 360px) {
+      @media (max-width: 480px) {
         .control-dock { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
         .control-dock .action-buttons, .control-dock .notify-row { gap: 6px; }
       }
       @media (min-width: 800px) and (max-width: 1580px) {
-        .control-dock { left: auto; right: -66px; top: calc(var(--mobile-content-height, 500px) - 238px); width: 54px; display: flex; }
+        .control-dock { left: auto; right: -66px; top: calc(var(--mobile-content-height, 500px) - 296px); width: 54px; display: flex; }
         .control-dock .action-buttons, .control-dock .notify-row { flex-direction: column; gap: 12px; }
         .control-dock .icon-button { width: 54px; min-width: 54px; height: 46px; min-height: 46px; }
-        .logo-slot { position: absolute; right: 74px; top: 252px; width: 150px; }
+        .logo-slot { position: absolute; right: 74px; top: 310px; width: 150px; }
       }
       @media (max-height: 420px) and (max-width: 1580px) {
         .page { overflow-y: auto; }
@@ -882,6 +883,7 @@
       }
 
     </style>
+    <link rel="stylesheet" href="{% static 'tutorial/tutorial.css' %}?v=1">
   </head>
   <body>
     <canvas id="aurora" aria-hidden="true" hidden></canvas>
@@ -911,6 +913,10 @@
           <div class="control-dock" id="control-dock">
             <div class="logo-slot" id="logo-slot"></div>
             <div class="action-buttons">
+              <button class="tv-button icon-button tv-corner-button" id="tutorial-toggle" type="button"
+                aria-label="Open help and tutorials" aria-haspopup="dialog" aria-controls="furatic-tutorial" aria-expanded="false" title="Help and tutorials">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 .2c0 1.6-2.5 2-2.5 3.8M12 16.2v.3" stroke-linecap="round"/></svg>
+              </button>
 <button
             class="tv-button icon-button tv-corner-button"
             id="tv-toggle"
@@ -1305,7 +1311,7 @@
         const viewportProbe = document.createElement("div");
         viewportProbe.style.cssText = "position:fixed;height:100svh;width:0;visibility:hidden;pointer-events:none";
         document.body.appendChild(viewportProbe);
-        const placementElements = [brand, toggleButton, ...document.querySelectorAll(".notify-row > a")];
+        const placementElements = [brand, document.getElementById("tutorial-toggle"), toggleButton, ...document.querySelectorAll(".notify-row > a")];
         const placements = new Map();
         let placementFrame = 0, placementTime = 0, placementRequested = 0;
         const placementKeys = ["left", "top", "width", "height"];
@@ -1883,24 +1889,6 @@
       
       setInterval(pollMode, 7000);
     </script>
-    <div id="furatic-first-visit" role="dialog" aria-modal="true" aria-labelledby="furatic-rules-title" hidden style="position:fixed;inset:0;z-index:9999;background:rgba(2,4,12,.86);display:grid;place-items:center;padding:24px">
-      <div style="max-width:580px;border:1px solid rgba(130,170,255,.3);border-radius:24px;padding:28px;background:#091022;box-shadow:0 24px 80px #000">
-        <h2 id="furatic-rules-title">Welcome to FURATIC!</h2>
-        <p>Add a YouTube link or song name, vote on the queue, and enjoy our community radio.</p>
-        <ul><li>Follow FURATIC rules.</li><li>Do not submit hateful, harassing, or intentionally disruptive content.</li><li>Songs with potentially rule breaking content may wait for moderator review.</li><li>You can add up to 5 songs at a time, and it will automatically hold your extra songs at the bottom of the queue until your first song played and it's your turn again.</li></ul>
-        <button id="furatic-rules-accept" type="button" style="width:100%;padding:13px;border:0;border-radius:14px;font-weight:800">I understand — enter FURATIC</button>
-      </div>
-    </div>
-    <script>
-      (function () {
-        const key = "furatic-rules-v1";
-        const modal = document.getElementById("furatic-first-visit");
-        modal.style.display = "none";
-        const showRules = function () { if (!localStorage.getItem(key)) { modal.hidden = false; modal.style.display = "grid"; } };
-        if (document.body.classList.contains("is-logo-docked")) showRules();
-        else window.addEventListener("furatic:intro-complete", showRules, {once: true});
-        document.getElementById("furatic-rules-accept").addEventListener("click", function () { localStorage.setItem(key, "accepted"); modal.style.display = "none"; modal.hidden = true; });
-      }());
-    </script>
+    {% include "partials/tutorial.html" %}
   </body>
 </html>
