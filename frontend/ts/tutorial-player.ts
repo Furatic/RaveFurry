@@ -59,6 +59,11 @@ export function onReady() {
   const practiceAnimations = new Set<Animation>();
   let clearPracticeTransition = () => {};
   let rendered = false;
+  let playbackTimer = 0;
+  let playingOccurrence = '';
+  let playingSince = 0;
+  let playingOffset = 0;
+  let playingDuration = 0;
   const input = document.getElementById('music-input') as HTMLInputElement;
   const search = document.getElementById('request-new-music');
   const desktop = () => window.parent.matchMedia('(min-width: 1581px)').matches;
@@ -106,6 +111,28 @@ export function onReady() {
     return ['[data-queue-key="3"] .vote-up', '.next-up-lock', '[data-queue-key="4"] .vote-up', '[data-queue-key="5"] .vote-down', null, null][step];
   }
   function actionTarget() { return lesson === 'voting' && step === 2 ? null : target(); }
+  function playedSeconds() {
+    return Math.min(playingDuration, Math.max(0, playingOffset + (performance.now() - playingSince) / 1000));
+  }
+  function playbackProgress(current) {
+    const occurrence = current?.occurrenceId || '';
+    if (occurrence !== playingOccurrence) {
+      playingOccurrence = occurrence;
+      playingDuration = Number(current?.effectiveDuration || current?.duration || 0);
+      playingSince = performance.now();
+      // Existing example songs start partway through; newly playing songs start at zero.
+      playingOffset = rendered ? 0 : playingDuration * .23;
+    }
+    return playingDuration ? playedSeconds() / playingDuration * 100 : 0;
+  }
+  function updatePlaybackClock() {
+    window.clearTimeout(playbackTimer); playbackTimer = 0;
+    if (disposed || document.hidden || !playingOccurrence) return;
+    const seconds = Math.floor(playedSeconds());
+    document.getElementById('current-song-time-elapsed').textContent = Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
+    // Read elapsed time instead of counting ticks, so a delayed callback catches up.
+    if (seconds < playingDuration) playbackTimer = window.setTimeout(updatePlaybackClock, 1000);
+  }
   function syncCue() {
     document.querySelectorAll('.furatic-tutorial-target, .furatic-tutorial-action').forEach(node => node.classList.remove('furatic-tutorial-target', 'furatic-tutorial-action'));
     const selector = target();
@@ -163,7 +190,8 @@ export function onReady() {
     const finishTransition = capturePracticeTransition(current);
     const votes = [...rows, ...(current ? [current] : [])].map(item => ({occurrenceId: item.occurrenceId, choice: item.own ? 1 : lesson === 'voting' && item.id === 3 && step > 0 ? 1 : lesson === 'voting' && item.id === 5 && step >= 4 ? -1 : 0, voteRevision: step}));
     local.furaticTutorialOwnState = {songs: rows.filter(s => s.own).map(s => ({queueKey: s.id})), currentSongQueueKey: current?.own ? current.id : null, myVotes: votes};
-    updateState({musiq: {currentSong: current, songQueue: rows, paused: true, progress: 23, volume: .5, totalTimeFormatted: '', myVotes: votes}, siteMode: 'normal'});
+    updateState({musiq: {currentSong: current, songQueue: rows, paused: !current, progress: playbackProgress(current), volume: .5, totalTimeFormatted: '', myVotes: votes}, siteMode: 'normal'});
+    updatePlaybackClock();
     document.dispatchEvent(new CustomEvent('furatic:refresh-personal-votes'));
     rendered = true;
     finishTransition();
@@ -249,7 +277,12 @@ export function onReady() {
     if (event.data.type === 'furatic:tutorial-fill') { input.focus(); fill(); }
   });
   window.addEventListener('resize', local.furaticTutorialPanels.syncLayout);
-  window.addEventListener('pagehide', () => { disposed = true; stopTyping(); cue.destroy(); clearPracticeTransition(); });
+  document.addEventListener('visibilitychange', updatePlaybackClock);
+  window.addEventListener('pagehide', () => {
+    disposed = true; stopTyping(); cue.destroy(); clearPracticeTransition();
+    window.clearTimeout(playbackTimer); playbackTimer = 0;
+    document.removeEventListener('visibilitychange', updatePlaybackClock);
+  });
   render();
 }
 
