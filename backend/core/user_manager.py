@@ -211,12 +211,12 @@ def has_controls(user) -> bool:
 
 def is_admin(user) -> bool:
     """Determines whether the given user is the admin."""
-    return bool(getattr(user, "is_superuser", False))
+    return bool(getattr(user, "is_authenticated", False) and getattr(user, "is_active", False) and getattr(user, "is_superuser", False))
 
 
 def is_moderator(user) -> bool:
     """Determines whether the given user belongs to the moderator role."""
-    if not getattr(user, "is_authenticated", False):
+    if not getattr(user, "is_authenticated", False) or not getattr(user, "is_active", False):
         return False
     return bool(user.groups.filter(name=MODERATOR_GROUP_NAME).exists())
 
@@ -383,7 +383,8 @@ def ensure_builtin_moderator(
         **{UserModel.USERNAME_FIELD: username}
     )
 
-    user.is_active = True
+    # Account access is managed by the administrator; retain a suspension
+    # across routine startups instead of silently re-enabling this account.
     if hasattr(user, "is_staff"):
         user.is_staff = False
     if hasattr(user, "is_superuser"):

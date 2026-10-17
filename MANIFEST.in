@@ -9,6 +9,7 @@ graft backend/setup
 graft backend/static
 graft backend/templates
 graft backend/tests
+graft backend/visualizer
 include backend/__init__.py
 include backend/manage.py
 include backend/VERSION

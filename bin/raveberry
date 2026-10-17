@@ -52,6 +52,7 @@ class Raveberry:
             nargs="?",
             help="""\
 run         run a basic version of Raveberry
+visualizer  run only the local OBS background/audio analyzer
 install     install Raveberry into the system
 help        show this help and exit""",
         )
@@ -117,12 +118,28 @@ help        show this help and exit""",
             sys.exit(1)
 
         command = args.command.lstrip("-")
-        choices = ["run", "install"]
+        choices = ["run", "install", "visualizer"]
         if command not in choices:
             parser.print_help()
             sys.exit(1)
         elif command == "run":
             self.run_server(args.nomopidy, args.celery)
+        elif command == "visualizer":
+            # Standalone Linux/service deployments get the same isolated recovery
+            # as `run`, without initializing Django or starting music playback.
+            if self.directory not in sys.path:
+                sys.path.insert(0, self.directory)
+            from visualizer.supervisor import VisualizerCompanion
+            companion = VisualizerCompanion(self.directory)
+            try:
+                companion.start()
+                while companion.thread and companion.thread.is_alive():
+                    companion.thread.join(timeout=.5)
+            except KeyboardInterrupt:
+                pass
+            finally:
+                companion.close()
+            sys.exit(companion.exit_code)
         elif command == "install":
             self.install(
                 config_confirmed=args.confirm_config,
@@ -347,8 +364,8 @@ help        show this help and exit""",
             "application, "
             "host='127.0.0.1', "
             "port=8080, "
-            "threads=24, "
-            "connection_limit=300, "
+            "threads=160, "
+            "connection_limit=450, "
             "channel_timeout=60, "
             "expose_tracebacks=False"
             ")"
@@ -372,7 +389,7 @@ help        show this help and exit""",
         return subprocess.Popen(
             [sys.executable, "-c", self._waitress_command()],
             env={
-                **os.environ,
+                **self._windows_postgres_environment(),
                 "DJANGO_DEBUG": "1",
                 "PYTHONUNBUFFERED": "1",
                 "FURATIC_LOCAL_HTTP_SERVER": "1",
@@ -402,9 +419,18 @@ help        show this help and exit""",
                 "http://127.0.0.1:8080/_healthz/",
                 timeout=3,
             ) as response:
-                return 200 <= response.status < 500
+                return 200 <= response.status < 300
         except (OSError, urllib.error.URLError, TimeoutError):
             return False
+
+    @staticmethod
+    def _windows_postgres_environment() -> Dict[str, str]:
+        env = dict(os.environ)
+        host = (env.get("POSTGRES_HOST") or "127.0.0.1").lower()
+        if os.name == "nt" and host in {"127.0.0.1", "localhost", "::1"}:
+            if not env.get("PGGSSENCMODE"):
+                env["PGGSSENCMODE"] = "disable"
+        return env
 
     def _database_healthy(self) -> bool:
         host = os.environ.get("POSTGRES_HOST", "127.0.0.1")
@@ -418,6 +444,7 @@ help        show this help and exit""",
                 stderr=subprocess.DEVNULL,
                 timeout=3,
                 check=False,
+                env=self._windows_postgres_environment(),
             )
             return result.returncode == 0
         except (OSError, subprocess.SubprocessError):
@@ -485,9 +512,14 @@ help        show this help and exit""",
     def _read_restart_request(self) -> str:
         self._ensure_django()
         from core import redis  # pylint: disable=import-outside-toplevel
+        from redis.exceptions import RedisError  # pylint: disable=import-outside-toplevel
 
         try:
             return str(redis.connection.get("web_restart_requested") or "")
+        except RedisError:
+            # A brief Redis outage must not terminate the supervisor and audio.
+            # The HTTP health check reports persistent runtime failures.
+            return ""
         finally:
             self._close_django_db_connections()
 
@@ -521,146 +553,163 @@ help        show this help and exit""",
     ) -> None:
         import msvcrt  # pylint: disable=import-outside-toplevel
 
-        self._start_output_thread(server)
-        self._console_message("FURATIC controls ready. Press H for help.")
+        try:
+            self._start_output_thread(server)
+            self._console_message("FURATIC controls ready. Press H for help.")
 
-        bad_health_checks = 0
-        last_health_check = 0.0
-        last_database_check = 0.0
+            bad_health_checks = 0
+            bad_database_checks = 0
+            last_health_check = 0.0
+            last_database_check = 0.0
 
-        while True:
-            if server.poll() is not None:
-                self._console_message("Web server exited. Restarting...")
-                self._clear_restart_request()
-                server = self._start_windows_web_server(additional_env)
-                self._start_output_thread(server)
-                bad_health_checks = 0
-                last_health_check = time.monotonic()
-                self._wait_for_web_server_ready(server)
-                continue
+            while True:
+                if server.poll() is not None:
+                    self._console_message("Web server exited. Restarting...")
+                    self._clear_restart_request()
+                    server = self._start_windows_web_server(additional_env)
+                    self._start_output_thread(server)
+                    bad_health_checks = 0
+                    bad_database_checks = 0
+                    last_health_check = time.monotonic()
+                    self._wait_for_web_server_ready(server)
+                    continue
 
-            restart_reason = self._read_restart_request()
-            if restart_reason:
-                self._console_message(
-                    f"Restarting web server safely: {restart_reason}"
-                )
-
-                # Keep the restart request set while stopping the old child so
-                # playback cannot start the next song in the old process.
-                self._stop_windows_web_server(server)
-
-                # The old child is gone now. Acknowledge the request before
-                # starting the new child, otherwise the supervisor will loop.
-                self._clear_restart_request()
-
-                server = self._start_windows_web_server(additional_env)
-                self._start_output_thread(server)
-                bad_health_checks = 0
-                last_health_check = time.monotonic()
-                self._wait_for_web_server_ready(server)
-                continue
-
-            now = time.monotonic()
-            if now - last_database_check >= 5:
-                last_database_check = now
-
-                if not self._database_healthy():
+                restart_reason = self._read_restart_request()
+                if restart_reason:
                     self._console_message(
-                        "PostgreSQL is not accepting connections. "
-                        "Restarting local database and web server..."
+                        f"Restarting web server safely: {restart_reason}"
                     )
 
+                    # Keep the restart request set while stopping the old child so
+                    # playback cannot start the next song in the old process.
                     self._stop_windows_web_server(server)
-                    self._clear_restart_request()
 
-                    while not self._wait_for_database_ready(timeout=30):
-                        self._console_message(
-                            "PostgreSQL is still unavailable. Retrying database recovery..."
-                        )
-                        time.sleep(2)
+                    # The old child is gone now. Acknowledge the request before
+                    # starting the new child, otherwise the supervisor will loop.
+                    self._clear_restart_request()
 
                     server = self._start_windows_web_server(additional_env)
                     self._start_output_thread(server)
                     bad_health_checks = 0
+                    bad_database_checks = 0
                     last_health_check = time.monotonic()
-                    last_database_check = time.monotonic()
                     self._wait_for_web_server_ready(server)
                     continue
 
-            now = time.monotonic()
-            if now - last_health_check >= 10:
-                last_health_check = now
-                if self._web_server_healthy():
-                    bad_health_checks = 0
-                else:
-                    bad_health_checks += 1
-                    if bad_health_checks >= 3:
+                now = time.monotonic()
+                if now - last_database_check >= 5:
+                    last_database_check = now
+
+                    if self._database_healthy():
+                        bad_database_checks = 0
+                    else:
+                        bad_database_checks += 1
+
+                    # Native playback may still be healthy during a brief
+                    # database delay. Require consecutive failed probes before
+                    # replacing the shared web/audio process.
+                    if bad_database_checks >= 3:
                         self._console_message(
-                            "Web server health check failed repeatedly. Restarting..."
+                            "PostgreSQL failed repeated readiness checks. "
+                            "Restarting local database and web server..."
                         )
+
                         self._stop_windows_web_server(server)
                         self._clear_restart_request()
+
+                        while not self._wait_for_database_ready(timeout=30):
+                            self._console_message(
+                                "PostgreSQL is still unavailable. Retrying database recovery..."
+                            )
+                            time.sleep(2)
+
                         server = self._start_windows_web_server(additional_env)
                         self._start_output_thread(server)
                         bad_health_checks = 0
+                        bad_database_checks = 0
                         last_health_check = time.monotonic()
+                        last_database_check = time.monotonic()
                         self._wait_for_web_server_ready(server)
                         continue
 
-            if msvcrt.kbhit():
-                key = msvcrt.getwch()
-                if key in ("\x00", "\xe0"):
-                    if msvcrt.kbhit():
-                        msvcrt.getwch()
-                    time.sleep(0.05)
-                    continue
-
-                key = key.lower()
-                if key == "a":
-                    self._send_operator_command("pause_for_afterhours")
-                    self._set_site_mode("afterhours")
-                    self._console_message(
-                        "Switched public site to After Hours mode. Playback is paused."
-                    )
-                elif key == "e":
-                    current_mode = self._get_site_mode()
-
-                    if current_mode == "afterhours":
-                        queued_count, current_count = self._get_saved_playback_state()
-
-                        if queued_count > 0 or current_count > 0:
-                            choice = self._prompt_event_queue_choice(
-                                queued_count, current_count
+                now = time.monotonic()
+                if now - last_health_check >= 10:
+                    last_health_check = now
+                    if self._web_server_healthy():
+                        bad_health_checks = 0
+                    else:
+                        bad_health_checks += 1
+                        if bad_health_checks >= 3:
+                            self._console_message(
+                                "Web server health check failed repeatedly. Restarting..."
                             )
+                            self._stop_windows_web_server(server)
+                            self._clear_restart_request()
+                            server = self._start_windows_web_server(additional_env)
+                            self._start_output_thread(server)
+                            bad_health_checks = 0
+                            bad_database_checks = 0
+                            last_health_check = time.monotonic()
+                            self._wait_for_web_server_ready(server)
+                            continue
 
-                            if choice == "clear":
-                                self._send_operator_command("clear_for_event")
-                                self._set_site_mode("event")
-                                self._console_message(
-                                    "Switched public site to Event Mode. Previous queue was cleared."
+                if msvcrt.kbhit():
+                    key = msvcrt.getwch()
+                    if key in ("\x00", "\xe0"):
+                        if msvcrt.kbhit():
+                            msvcrt.getwch()
+                        time.sleep(0.05)
+                        continue
+
+                    key = key.lower()
+                    if key == "a":
+                        self._send_operator_command("pause_for_afterhours")
+                        self._set_site_mode("afterhours")
+                        self._console_message(
+                            "Switched public site to After Hours mode. Playback is paused."
+                        )
+                    elif key == "e":
+                        current_mode = self._get_site_mode()
+
+                        if current_mode == "afterhours":
+                            queued_count, current_count = self._get_saved_playback_state()
+
+                            if queued_count > 0 or current_count > 0:
+                                choice = self._prompt_event_queue_choice(
+                                    queued_count, current_count
                                 )
+
+                                if choice == "clear":
+                                    self._send_operator_command("clear_for_event")
+                                    self._set_site_mode("event")
+                                    self._console_message(
+                                        "Switched public site to Event Mode. Previous queue was cleared."
+                                    )
+                                else:
+                                    self._set_site_mode("event")
+                                    self._send_operator_command("resume_from_afterhours")
+                                    self._console_message(
+                                        "Switched public site to Event Mode. Previous queue was kept."
+                                    )
                             else:
                                 self._set_site_mode("event")
-                                self._send_operator_command("resume_from_afterhours")
-                                self._console_message(
-                                    "Switched public site to Event Mode. Previous queue was kept."
-                                )
+                                self._console_message("Switched public site to Event Mode.")
                         else:
                             self._set_site_mode("event")
-                            self._console_message("Switched public site to Event Mode.")
-                    else:
-                        self._set_site_mode("event")
-                        self._console_message("Already in Event Mode.")
-                elif key == "h":
-                    self._console_message(
-                        "Hotkeys: E = Event Mode, A = After Hours, Q = Quit."
-                    )
-                elif key == "q":
-                    self._console_message("Stopping Raveberry...")
-                    self._stop_windows_web_server(server)
-                    break
+                            self._console_message("Already in Event Mode.")
+                    elif key == "h":
+                        self._console_message(
+                            "Hotkeys: E = Event Mode, A = After Hours, Q = Quit."
+                        )
+                    elif key == "q":
+                        self._console_message("Stopping Raveberry...")
+                        break
 
-            time.sleep(0.05)
+                time.sleep(0.05)
+        finally:
+            # Own the latest child, including replacements after a restart.
+            # run_server still holds the original child reference.
+            self._stop_windows_web_server(server)
 
     def run_server(self, nomopidy=False, use_celery=False) -> None:
         """Run Raveberry with user privileges."""
@@ -684,6 +733,7 @@ help        show this help and exit""",
             additional_env["DJANGO_NO_CELERY"] = "1"
 
         server = None
+        visualizer = None
         try:
             subprocess.check_call(
                 [sys.executable, "manage.py", "migrate"],
@@ -700,6 +750,15 @@ help        show this help and exit""",
 
             admin_link = self._login_link("/admin/")
             moderator_link = self._login_link("/moderator/")
+
+            # Independent of the web/playback child: no between-song restarts,
+            # database polling or recovery actions are added to music playback.
+            try:
+                from visualizer.supervisor import VisualizerCompanion
+                visualizer = VisualizerCompanion(self.directory)
+                visualizer.start()
+            except Exception as error:  # an optional feature cannot block music
+                print(f"OBS visualizer unavailable: {error}", flush=True)
 
             if os.name == "nt":
                 self.console_lock = threading.Lock()
@@ -742,6 +801,11 @@ help        show this help and exit""",
         except KeyboardInterrupt:
             pass
         finally:
+            if visualizer is not None:
+                try:
+                    visualizer.close()
+                except Exception as error:
+                    print(f"OBS visualizer cleanup: {error}", flush=True)
             if server and server.poll() is None:
                 server.terminate()
                 try:
@@ -877,3 +941,4 @@ help        show this help and exit""",
 
 if __name__ == "__main__":
     Raveberry().main()
+

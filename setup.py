@@ -49,12 +49,14 @@ setuptools.setup(
         "raveberry.core",
         "raveberry.main",
         "raveberry.tests",
+        "raveberry.visualizer",
     ],
     package_dir={
         "raveberry": "backend",
         "raveberry.core": "backend/core",
         "raveberry.main": "backend/main",
         "raveberry.tests": "backend/tests",
+        "raveberry.visualizer": "backend/visualizer",
     },
     include_package_data=True,
     python_requires=">=3.8",
@@ -62,6 +64,11 @@ setuptools.setup(
         "install": install_packages,
         "run": run_packages,
         "screenvis": screenvis_packages,
+        "visualizer": [
+            "numpy>=1.23,<3",
+            "aiohttp>=3.9,<4",
+            "PyAudioWPatch==0.2.12.9;sys_platform=='win32'",
+        ],
     },
     scripts=["bin/raveberry"],
 )

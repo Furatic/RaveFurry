@@ -1,0 +1,26 @@
+{% extends 'musiq_embed.html' %}
+{% load static %}
+{% block js %}
+    {{ block.super }}
+    window.FURATIC_TUTORIAL_PLAYER = true;
+    window.FURATIC_TUTORIAL_LESSON = "{{ tutorial_lesson|escapejs }}";
+    window.FURATIC_TUTORIAL_ART_ROOT = "{% static 'tutorial/' %}";
+{% endblock %}
+{% block player_bundle %}
+    <link rel="stylesheet" href="{% static 'tutorial/tutorial.css' %}?v=5">
+    <script src="{% static 'tutorial/cues.js' %}?v=5" defer></script>
+    <script src="{% static 'tutorial/player.js' %}?v=5" defer></script>
+{% endblock %}
+{% block content %}
+    {{ block.super }}
+    <style>
+      /* The player itself inherits every live style unchanged. Only the
+         instructional focus ring is specific to practice. */
+      .furatic-tutorial-target { outline: 2px solid #92d9ff !important; outline-offset: 3px; }
+      .furatic-tutorial-target:is(.vote-up, .vote-down) { border-radius: 50%; }
+      .furatic-tutorial-target.furatic-tutorial-action:is(.vote-up, .vote-down) { animation: furaticTutorialPulse 2s ease-in-out infinite; }
+      #auto-queue-toggle.furatic-tutorial-target { outline: none !important; border-radius: 14px; box-shadow: inset 0 0 0 2px #92d9ff; }
+      @keyframes furaticTutorialPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(146,217,255,.3); } 50% { box-shadow: 0 0 0 6px rgba(146,217,255,.05); } }
+      @media (prefers-reduced-motion: reduce) { .furatic-tutorial-target { animation: none !important; } }
+    </style>
+{% endblock %}

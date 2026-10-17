@@ -30,6 +30,10 @@ class Player:
         Raises a PlaybackError on error."""
         raise NotImplementedError
 
+    def has_started_playback(self) -> bool:
+        """Successful start_song acknowledges playback by default (e.g. Mopidy's event)."""
+        return True
+
     def should_stop_waiting(self, previous_error: bool) -> bool:
         """check whether the main loop should stop waiting for the song to end.
         Returns True if it should stop waiting, False otherwise.

@@ -2,12 +2,21 @@
 from django.http import HttpResponse
 from django.shortcuts import redirect
 import logging
+import os
+import threading
 
-from core import audit_log, ip_screening, site_mode, user_manager
+from core import audit_log, ip_screening, redis, site_mode, user_manager
+from core.util import strtobool
+from redis.exceptions import RedisError
 
 from django.db import DatabaseError, OperationalError, close_old_connections, connections
 
 logger = logging.getLogger(__name__)
+
+# Leave PostgreSQL capacity for playback and recovery even with 160 HTTP workers.
+# Waiting requests have not opened a database connection; static serving and
+# the health endpoint do not consume these slots.
+_DATABASE_REQUEST_SLOTS = threading.BoundedSemaphore(80)
 
 _BAN_ALWAYS_ALLOWED_PREFIXES = (
     "/static/",
@@ -82,26 +91,46 @@ class DatabaseConnectionCleanupMiddleware:
 
     def __call__(self, request):
         if request.path == "/_healthz/":
+            recovery_reason = ""
+            try:
+                failed = redis.connection.get("playback_worker_failed")
+                if failed is not None and strtobool(failed):
+                    recovery_reason = "playback worker failed"
+            except (RedisError, ValueError) as error:
+                logger.warning("runtime health check failed: %s", error)
+                recovery_reason = "runtime health unavailable"
+            if recovery_reason:
+                if os.name == "nt":
+                    from core.musiq import windows_player  # pylint: disable=import-outside-toplevel
+
+                    if windows_player.recovery_would_interrupt_playback():
+                        return HttpResponse(
+                            "recovery deferred while media is active", content_type="text/plain"
+                        )
+                return HttpResponse(
+                    recovery_reason, status=503, content_type="text/plain"
+                )
             return HttpResponse("ok", content_type="text/plain")
 
-        close_old_connections()
-        try:
-            return self.get_response(request)
-        except (OperationalError, DatabaseError) as error:
-            logger.warning(
-                "database unavailable while handling %s %s: %s",
-                request.method,
-                request.get_full_path(),
-                error,
-            )
-            connections.close_all()
-            return HttpResponse(
-                "FURATIC is recovering its local database connection. Please retry shortly.",
-                status=503,
-                content_type="text/plain",
-            )
-        finally:
-            connections.close_all()
+        with _DATABASE_REQUEST_SLOTS:
+            close_old_connections()
+            try:
+                return self.get_response(request)
+            except (OperationalError, DatabaseError) as error:
+                logger.warning(
+                    "database unavailable while handling %s %s: %s",
+                    request.method,
+                    request.get_full_path(),
+                    error,
+                )
+                connections.close_all()
+                return HttpResponse(
+                    "FURATIC is recovering its local database connection. Please retry shortly.",
+                    status=503,
+                    content_type="text/plain",
+                )
+            finally:
+                connections.close_all()
 
 class ClientIpBanMiddleware:
     """Resolve the real client IP, log requests, and block banned traffic."""
@@ -111,8 +140,11 @@ class ClientIpBanMiddleware:
 
     def __call__(self, request):
         request.client_ip = user_manager.get_client_ip(request)
-        identity = user_manager.client_identity(request)
         path = request.path
+        # Public rendering snapshots do not need a database identity lookup.
+        # Keep all IP screening and resolve identity for blocked/audited requests.
+        features_only = request.method == "GET" and path == "/visualizer/features.json"
+        identity = None if features_only else user_manager.client_identity(request)
         screening = None
 
         if request.client_ip and user_manager.is_banned_ip(request.client_ip):
@@ -135,6 +167,8 @@ class ClientIpBanMiddleware:
                 allow_api=not site_mode.is_afterhours(),
             )
             if screening.get("blocked") and screening.get("newlyBlocked"):
+                if identity is None:
+                    identity = user_manager.client_identity(request)
                 audit_log.append(
                     "ip_screen_block",
                     request=request,
@@ -147,6 +181,8 @@ class ClientIpBanMiddleware:
                 )
 
         if screening and screening.get("blocked"):
+            if identity is None:
+                identity = user_manager.client_identity(request)
             if _can_bypass_ban(path, request):
                 response = self.get_response(request)
             else:
@@ -154,13 +190,16 @@ class ClientIpBanMiddleware:
         else:
             response = self.get_response(request)
 
-        logger.info(
-            "HTTP %s %s %s [%s]",
-            request.method,
-            request.get_full_path(),
-            response.status_code,
-            request.client_ip or request.META.get("REMOTE_ADDR", ""),
-        )
+        # Avoid thousands of console/file writes for successful background polls.
+        # All failures, bans, and ordinary site requests retain their existing logs.
+        if not features_only or response.status_code != 200:
+            logger.info(
+                "HTTP %s %s %s [%s]",
+                request.method,
+                request.get_full_path(),
+                response.status_code,
+                request.client_ip or request.META.get("REMOTE_ADDR", ""),
+            )
         if getattr(request, "furatic_set_browser_cookie", False):
             response.set_cookie(user_manager.CLIENT_TOKEN_COOKIE, request.furatic_browser_token, max_age=60 * 60 * 24 * 365 * 2, secure=request.is_secure(), httponly=True, samesite="Lax")
         return response
@@ -182,3 +221,4 @@ class AfterHoursModeMiddleware:
             return redirect("afterhours")
 
         return self.get_response(request)
+

@@ -207,11 +207,12 @@ class YoutubeSongProvider(SongProvider, Youtube):
         if storage.get("output") == "client":
             # youtube streaming links need to be fetched each time the song is requested
             return False
-        return os.path.isfile(self.get_path())
+        return os.path.isfile(self.get_path()) and os.path.getsize(self.get_path()) > 0
 
     def check_available(self) -> bool:
         self.info_dict = {}
         self.error = ""
+        self.download_rejected = False
 
         query = self.query or ""
 
@@ -262,6 +263,8 @@ class YoutubeSongProvider(SongProvider, Youtube):
                 logging.warning(error)
                 if is_age_restricted(error):
                     self.error = "Sorry, this video is age-restricted."
+                else:
+                    self.download_rejected = True
                 return False
 
         if self.id:
@@ -330,12 +333,21 @@ class YoutubeSongProvider(SongProvider, Youtube):
     def _download(self) -> bool:
         download_error = None
         location = None
+        options = Youtube.get_ydl_opts()
+        if getattr(self, "download_incomplete", False):
+            options["overwrites"] = True
+        self.download_incomplete = True
 
         try:
-            with yt_dlp.YoutubeDL(Youtube.get_ydl_opts()) as ydl:
-                ydl.download([self.get_external_url()])
+            with yt_dlp.YoutubeDL(options) as ydl:
+                if ydl.download([self.get_external_url()]) != 0:
+                    self.error = "Sorry, this video could not be downloaded."
+                    return False
 
             location = self.get_path()
+            if not os.path.isfile(location) or os.path.getsize(location) == 0:
+                self.error = "Sorry, this video could not be downloaded."
+                return False
             base = os.path.splitext(location)[0]
             thumbnail = base + ".jpg"
             try:
@@ -373,10 +385,11 @@ class YoutubeSongProvider(SongProvider, Youtube):
             logging.error("location: %s", location)
             logging.error(download_error)
             return False
+        self.download_incomplete = False
         return True
 
     def make_available(self) -> bool:
-        if os.path.isfile(self.get_path()):
+        if not getattr(self, "download_incomplete", False) and os.path.isfile(self.get_path()) and os.path.getsize(self.get_path()) > 0:
             # don't download the file if it is already cached
             return True
         musiq.update_state()

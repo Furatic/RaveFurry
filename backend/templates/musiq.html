@@ -75,9 +75,6 @@
 			</div>
 			<i class="fas fa-forward" id="seek-forward"></i>
 			<i class="fas fa-fast-forward" id='skip-song'></i><br/>
-            {% if not "vot" in interactivity %}
-			<i class="fas fa-random icon-disabled" id="set-shuffle"></i>
-            {% endif %}
 			<i class="fas fa-sync icon-disabled" id="set-repeat"></i>
 			<i class="fas fa-play-circle icon-disabled" id="set-autoplay"></i>
 			<i class="fas fa-robot icon-disabled" id="request-radio"></i>
@@ -93,7 +90,6 @@
 		</div>
 		<div id="queue-controls">
 			{% if is_admin %}
-				<i class="fas fa-random icon-disabled" id="shuffle-all"></i>
 				<i class="fas fa-trash-alt icon-disabled" id="remove-all"></i>
 			{% endif %}
 		</div>

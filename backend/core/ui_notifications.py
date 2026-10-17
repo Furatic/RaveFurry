@@ -11,7 +11,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 from redis.exceptions import RedisError
 
-from core import redis
+from core import redis, user_manager
 
 NOTIFICATION_LIST_KEY = "furatic-ui-notifications"
 NOTIFICATION_SEQUENCE_KEY = "furatic-ui-notifications-seq"
@@ -25,6 +25,8 @@ def emit(
     *,
     level: str = "info",
     icon: str = "✨",
+    recipient_token: str = "",
+    request_key: int | None = None,
 ) -> None:
     """Publish a short-lived public UI notification.
 
@@ -41,6 +43,8 @@ def emit(
             "level": level,
             "icon": icon,
             "createdAt": time.time(),
+            "recipientToken": recipient_token,
+            "requestKey": request_key,
         }
         redis.connection.rpush(NOTIFICATION_LIST_KEY, json.dumps(payload))
         redis.connection.ltrim(
@@ -52,7 +56,7 @@ def emit(
         return
 
 
-def _recent_after(after: int) -> List[Dict[str, Any]]:
+def _recent_after(after: int, recipient_token: str = "") -> List[Dict[str, Any]]:
     try:
         raw_items = redis.connection.lrange(NOTIFICATION_LIST_KEY, 0, -1)
     except RedisError:
@@ -66,6 +70,10 @@ def _recent_after(after: int) -> List[Dict[str, Any]]:
             continue
 
         if not isinstance(item, dict):
+            continue
+
+        recipient = item.get("recipientToken", "")
+        if recipient and recipient != recipient_token:
             continue
 
         try:
@@ -85,11 +93,14 @@ def _recent_after(after: int) -> List[Dict[str, Any]]:
                 "level": str(item.get("level", "info")),
                 "icon": str(item.get("icon", "✨"))[:8],
                 "createdAt": float(item.get("createdAt", 0.0) or 0.0),
+                "requestKey": item.get("requestKey"),
             }
         )
 
     notifications.sort(key=lambda item: int(item["id"]))
-    return notifications[-12:]
+    private = [item for item in notifications if item["kind"].startswith("song_request_")]
+    public = [item for item in notifications if not item["kind"].startswith("song_request_")][-12:]
+    return sorted(private + public, key=lambda item: int(item["id"]))
 
 
 @require_GET
@@ -100,7 +111,8 @@ def notifications(request: WSGIRequest) -> JsonResponse:
     except (TypeError, ValueError):
         after = 0
 
-    items = _recent_after(after)
+    identity = user_manager.client_identity(request, create=False)
+    items = _recent_after(after, identity.token_hash if identity else "")
     latest = after
     if items:
         latest = max(int(item["id"]) for item in items)

@@ -1,5 +1,6 @@
 """Contains all database models."""
 from typing import TYPE_CHECKING
+import uuid
 
 from django.db import connection, models
 from django.conf import settings
@@ -157,6 +158,7 @@ class QueuedSong(models.Model):
     """Stores a song in the song queue so the queue is not lost on server restart."""
 
     id: int
+    occurrence_id = models.UUIDField(default=uuid.uuid4, db_index=True, editable=False)
     index = models.IntegerField()
     manually_requested = models.BooleanField()
     votes = models.IntegerField(default=0)
@@ -194,6 +196,9 @@ class CurrentSong(models.Model):
     """Stores the currently playing song. Only has one element."""
 
     queue_key = models.IntegerField()
+    occurrence_id = models.UUIDField(default=uuid.uuid4, db_index=True, editable=False)
+    playback_started_at = models.DateTimeField(null=True, blank=True)
+    playback_outcome = models.CharField(max_length=20, default="completed")
     manually_requested = models.BooleanField()
     votes = models.IntegerField()
     artist = models.CharField(max_length=1000)
@@ -273,6 +278,61 @@ class RecentPlay(models.Model):
 
     created = models.DateTimeField(auto_now_add=True, db_index=True)
     song_url = models.CharField(max_length=2000, db_index=True)
+
+
+class QueueMutationLock(models.Model):
+    """One short-lived transaction lock shared by queue handoffs and votes."""
+
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1)
+
+
+class SongVoteState(models.Model):
+    """Durable presentation state, independent of transient queued row IDs."""
+
+    occurrence_id = models.UUIDField(primary_key=True)
+    engagement = models.JSONField(default=dict)
+    retired_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+
+class SongVote(models.Model):
+    occurrence = models.ForeignKey(SongVoteState, on_delete=models.CASCADE, related_name="voters")
+    voter_key = models.CharField(max_length=80)
+    choice = models.SmallIntegerField(default=0)
+    revision = models.PositiveIntegerField(default=0)
+    changed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    activity_recorded = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["occurrence", "voter_key"], name="unique_song_voter")]
+        indexes = [models.Index(fields=["voter_key", "changed_at"], name="song_voter_activity")]
+
+
+class VoteMutation(models.Model):
+    occurrence = models.ForeignKey(SongVoteState, on_delete=models.CASCADE, related_name="mutations")
+    voter_key = models.CharField(max_length=80)
+    mutation_id = models.CharField(max_length=64)
+    created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["occurrence", "voter_key", "mutation_id"], name="unique_vote_mutation")]
+
+
+class PlaybackHistory(models.Model):
+    """Public metadata for occurrences that really entered playback."""
+
+    occurrence_id = models.UUIDField(unique=True)
+    started_at = models.DateTimeField()
+    ended_at = models.DateTimeField(db_index=True)
+    artist = models.CharField(max_length=1000)
+    title = models.CharField(max_length=1000)
+    external_url = models.CharField(max_length=2000)
+    artwork_url = models.CharField(max_length=2000, blank=True, default="")
+    duration = models.FloatField()
+    votes = models.IntegerField(default=0)
+    outcome = models.CharField(max_length=20, default="completed")
+
+    class Meta:
+        ordering = ["-ended_at", "-id"]
 
 
 class Setting(models.Model):

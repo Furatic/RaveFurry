@@ -4,12 +4,13 @@
 from __future__ import annotations
 
 import logging
+from threading import Timer
 from typing import Optional
 
-from core import models, redis
+from core import models, redis, ui_notifications
 from core.musiq import musiq, playback, player
 from core.settings import storage
-from core.tasks import app
+from core.tasks import app, CELERY_ACTIVE
 
 
 def _stop_idle_backup_stream_after_failure() -> None:
@@ -126,7 +127,9 @@ class MusicProvider:
                 # add the additional keywords from the settings before checking
                 self.query += " " + storage.get("additional_keywords")
             if not self.check_available():
-                raise ProviderError(self.error)
+                if not (defer_enqueue and self.type == "youtube" and self.id and getattr(self, "download_rejected", False)):
+                    raise ProviderError(self.error)
+                self.error = ""  # Retryable YouTube metadata rejection follows the download/retry path.
 
             # overwrite the enqueue function and make the resource available before calling it
             enqueue_function = fetch_enqueue
@@ -169,26 +172,95 @@ class MusicProvider:
 @app.task
 def enqueue(provider: MusicProvider, session_key: str, archive: bool) -> None:
     """Enqueue the music managed by the given provider."""
-    provider.persist(session_key, archive=archive)
+    try:
+        _finish_enqueue(provider, session_key, archive)
+    except Exception:
+        if not getattr(provider, "submission_token", ""):
+            raise
+        logging.exception("enqueue failed for submitted song %r", provider.query)
+        _submission_failure(provider, session_key, archive, retry=False)
+
+
+def _notify_submission(provider: MusicProvider, message: str, error: bool = False) -> None:
+    token = getattr(provider, "submission_token", "")
+    if token:
+        ui_notifications.emit(
+            "song_request_error" if error else "song_request_ready",
+            getattr(provider, "submission_query", "") or "Your song",
+            message,
+            level="error" if error else "success",
+            recipient_token=token,
+            request_key=provider.queued_song.id,
+        )
+
+
+def _finish_enqueue(provider: MusicProvider, session_key: str, archive: bool) -> None:
+    submitted = bool(getattr(provider, "submission_token", ""))
+    if submitted and not playback.queue.filter(id=provider.queued_song.id).exists():
+        return  # A removed request must never reappear when background work finishes.
+    if not submitted or not getattr(provider, "_submission_persisted", False):
+        provider.persist(session_key, archive=archive)
+        if submitted:
+            provider._submission_persisted = True
     provider.enqueue()
+    if submitted:
+        if _submission_ready(provider):
+            _notify_submission(provider, provider.submission_message)
+        elif playback.queue.filter(id=provider.queued_song.id).exists():
+            raise ProviderError("The song did not become ready.")
+        elif provider.error:
+            _notify_submission(provider, provider.error, error=True)
+
+
+def _submission_ready(provider: MusicProvider) -> bool:
+    return (
+        playback.queue.filter(id=provider.queued_song.id).exclude(internal_url=None).exclude(internal_url="").exists()
+        or models.CurrentSong.objects.filter(occurrence_id=provider.queued_song.occurrence_id).exists()
+    )
+
+
+def _submission_failure(provider: MusicProvider, session_key: str, archive: bool, retry: bool) -> None:
+    submitted = bool(getattr(provider, "submission_token", ""))
+    if submitted and _submission_ready(provider):
+        _notify_submission(provider, provider.submission_message)
+        return
+    if submitted and not playback.queue.filter(id=provider.queued_song.id).exists():
+        return
+    if submitted and provider.type == "youtube" and not retry:
+        provider.download_incomplete = True
+        _notify_submission(provider, "YouTube rejected our request to download that song, trying again in 30 seconds.", error=True)
+        if CELERY_ACTIVE:
+            fetch_enqueue.apply_async(args=(provider, session_key, archive, True), countdown=30)
+        else:
+            # Basic/Windows mode has no Celery scheduler; do not occupy a worker while waiting.
+            timer = Timer(30, lambda: fetch_enqueue.delay(provider, session_key, archive, True))
+            timer.daemon = True
+            timer.start()
+        return
+    if submitted:
+        message = "YouTube won't let us download this song right now :/" if provider.type == "youtube" else (provider.error or "This song could not be downloaded.")
+        _notify_submission(provider, message, error=True)
+    try:
+        provider.remove_placeholder()
+    except Exception:
+        logging.exception("failed to remove placeholder after fetch_enqueue error")
+    _stop_idle_backup_stream_after_failure()
+    musiq.update_state()
 
 
 @app.task
-def fetch_enqueue(provider: MusicProvider, session_key: str, archive: bool) -> None:
+def fetch_enqueue(provider: MusicProvider, session_key: str, archive: bool, retry: bool = False) -> None:
     """Fetch and enqueue the music managed by the given provider."""
     try:
+        if getattr(provider, "submission_token", "") and not playback.queue.filter(id=provider.queued_song.id).exists():
+            return
+        if getattr(provider, "submission_token", ""):
+            provider.error = ""
         if not provider.make_available():
-            provider.remove_placeholder()
-            _stop_idle_backup_stream_after_failure()
-            musiq.update_state()
+            _submission_failure(provider, session_key, archive, retry)
             return
 
-        enqueue(provider, session_key, archive)
+        _finish_enqueue(provider, session_key, archive)
     except Exception:
         logging.exception("fetch_enqueue failed for provider query=%r key=%r", provider.query, provider.key)
-        try:
-            provider.remove_placeholder()
-        except Exception:
-            logging.exception("failed to remove placeholder after fetch_enqueue error")
-        _stop_idle_backup_stream_after_failure()
-        musiq.update_state()
+        _submission_failure(provider, session_key, archive, retry)

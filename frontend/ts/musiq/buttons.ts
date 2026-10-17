@@ -5,6 +5,68 @@ import {
 } from '../base';
 
 let musicRequestInFlight = false;
+const completedDownloads = new Set<number>();
+const pendingDownloads = new Map<number, {query: string, message: string}>();
+const notificationStartedAt = Date.now() / 1000;
+let notificationCursor = 0;
+let notificationPollRunning = false;
+let notificationPollingStarted = false;
+
+function requestAccepted(response, query) {
+  if (response.pending) {
+    const key = Number(response.key);
+    if (!completedDownloads.has(key)) {
+      pendingDownloads.set(key, {query, message: response.message});
+      infoToast('Downloading your song…', '"' + query + '"', 0);
+      reconcileDownloadNotifications();
+    }
+  } else {
+    successToast(response.message, '"' + query + '"');
+  }
+}
+
+/** Queue state also confirms completion if the transient notification was missed. */
+export function reconcileDownloadNotifications() {
+  for (const [key, request] of pendingDownloads) {
+    const ready = state?.currentSong?.queueKey === key ||
+      state?.songQueue?.some(song => song.id === key && Boolean(song.internalUrl));
+    if (!ready) continue;
+    pendingDownloads.delete(key);
+    completedDownloads.add(key);
+    successToast(request.message, '"' + request.query + '"');
+  }
+}
+
+async function pollDownloadNotifications() {
+  if (notificationPollRunning) return;
+  notificationPollRunning = true;
+  const abort = new AbortController();
+  const timeout = window.setTimeout(() => abort.abort(), 9000);
+  try {
+    const response = await fetch('/api/notifications/?after=' + notificationCursor, {credentials: 'same-origin', cache: 'no-store', signal: abort.signal});
+    if (!response.ok) return;
+    const result = await response.json();
+    notificationCursor = Math.max(notificationCursor, Number(result.latest || 0));
+    for (const item of result.notifications || []) {
+      if (!String(item.kind).startsWith('song_request_') || item.createdAt < notificationStartedAt) continue;
+      if (item.kind === 'song_request_ready') {
+        const key = Number(item.requestKey);
+        pendingDownloads.delete(key);
+        if (completedDownloads.has(key)) continue;
+        completedDownloads.add(key);
+        successToast(item.message, '"' + item.title + '"');
+      } else {
+        if (!item.message.includes('trying again in 30 seconds')) {
+          completedDownloads.add(Number(item.requestKey));
+          pendingDownloads.delete(Number(item.requestKey));
+        }
+        errorToast(item.message, '"' + item.title + '"');
+      }
+    }
+  } catch (_error) {
+    // Keep the cursor so a temporary connection failure does not lose the result.
+  } finally { window.clearTimeout(timeout); notificationPollRunning = false; }
+}
 
 /** Finds the song key to a given HTML element.
  * @param {HTMLElement} element an element that is part of a queue entry
@@ -73,6 +135,7 @@ export function showPauseButton() {
  */
 export function requestArchivedMusic(key, query,
     platform = localStorageGet('platform')) {
+  infoToast(playlistEnabled() ? 'searching...' : 'Downloading your song…', '"' + query + '"', playlistEnabled() ? 2000 : 0);
   $.post(urls['musiq']['request-music'],
       {
         key: key,
@@ -80,11 +143,10 @@ export function requestArchivedMusic(key, query,
         playlist: playlistEnabled(),
         platform: platform,
       }).done(function(response) {
-    successToast(response.message, '"' + query + '"');
+    requestAccepted(response, query);
   }).fail(function(response) {
     errorToast(response.responseText, '"' + query + '"');
   });
-  infoToast('searching...', '"' + query + '"');
   $('#music-input').val('').trigger('change');
   disablePlaylistMode();
 }
@@ -99,19 +161,19 @@ export function requestNewMusic(query, platform = localStorageGet('platform')) {
   }
   musicRequestInFlight = true;
 
+  infoToast(playlistEnabled() ? 'searching...' : 'Downloading your song…', '"' + query + '"', playlistEnabled() ? 2000 : 0);
   $.post(urls['musiq']['request-music'],
       {
         query: query,
         playlist: playlistEnabled(),
         platform: platform,
       }).done(function(response) {
-    successToast(response.message, '"' + query + '"');
+    requestAccepted(response, query);
   }).fail(function(response) {
     errorToast(response.responseText, '"' + query + '"');
   }).always(function() {
     musicRequestInFlight = false;
   });
-  infoToast('searching...', '"' + query + '"');
   $('#music-input').val('').trigger('change');
   disablePlaylistMode();
 }
@@ -122,15 +184,16 @@ export function requestNewMusic(query, platform = localStorageGet('platform')) {
  * @param {string} url the external url that will be linked in the modal
  */
 function showTitleModal(element, duration, url) {
-  const contents = element.contents();
+  const scrollingContent = element.children('.furatic-title-content');
+  const contents = (scrollingContent.length ? scrollingContent : element).contents();
   const modalText = $('#title-modal .modal-text');
   modalText.empty();
   if (contents.length > 1) {
-    modalText.append($('<strong/>').text(contents.get(0).innerText));
+    modalText.append($('<strong/>').text($(contents.get(0)).text()));
     // cut the character that connects artist and title
-    modalText.append($('<span/>').text(contents.get(1).data.substring(3)));
+    modalText.append($('<span/>').text($(contents.get(1)).text().substring(3)));
   } else {
-    modalText.append($('<span/>').text(contents.get(0).data));
+    modalText.append($('<span/>').text(contents.text()));
   }
   modalText.append($('<span/>').text(duration));
   $('#external-link').attr('href', url);
@@ -139,6 +202,11 @@ function showTitleModal(element, duration, url) {
 
 /** Adds handlers for all buttons. */
 export function onReady() {
+  if (!notificationPollingStarted) {
+    notificationPollingStarted = true;
+    void pollDownloadNotifications();
+    window.setInterval(pollDownloadNotifications, 2000);
+  }
   $('#playlist-mode').on('click tap', function(e) {
     if ($(this).hasClass('icon-disabled')) {
       $(this).removeClass('icon-disabled');
@@ -230,7 +298,7 @@ export function onReady() {
 
   // info popup for the current song
   $('#current-song-title').on('click tap', function() {
-    if (state.currentSong == null) {
+    if (this.tagName === 'A' || state == null || state.currentSong == null) {
       return;
     }
     const url = state.currentSong.externalUrl;

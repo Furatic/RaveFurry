@@ -206,7 +206,10 @@ class SongProvider(MusicProvider):
                 queue_key,
             )
 
-        self.queued_song.delete()
+        try:
+            playback.queue.remove(queue_key)
+        except QueuedSong.DoesNotExist:
+            pass
 
     def check_cached(self) -> bool:
         return False

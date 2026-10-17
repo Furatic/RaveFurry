@@ -1,10 +1,13 @@
 """This module contains the celery app."""
 
 import os
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
 from core.util import strtobool
+
+logger = logging.getLogger(__name__)
 
 app: Any
 
@@ -28,9 +31,18 @@ if strtobool(os.environ.get("DJANGO_NO_CELERY", "0")):
                 from django.db import close_old_connections, connections
                 # pylint: disable=import-outside-toplevel
 
-                close_old_connections()
                 try:
+                    close_old_connections()
                     function(*args, **kwargs)
+                except Exception:  # pylint: disable=broad-except
+                    # Executor exceptions otherwise disappear into an unused
+                    # Future, leaving background failures invisible.
+                    logger.exception(
+                        "background task %s.%s failed",
+                        function.__module__,
+                        function.__name__,
+                    )
+                    raise
                 finally:
                     connections.close_all()
 
@@ -74,3 +86,4 @@ else:
             for _, tasks in active_tasks.items():
                 for task in tasks:
                     app.control.revoke(task_id=task["id"], terminate=True)
+

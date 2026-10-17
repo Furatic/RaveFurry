@@ -2,6 +2,9 @@
 {% load static %}
 
 {% block js %}
+    if (new URLSearchParams(window.location.search).get('layout') === 'framed') {
+        document.documentElement.classList.add('furatic-framed');
+    }
     const ADDITIONAL_KEYWORDS = '{{ additional_keywords }}';
     const FORBIDDEN_KEYWORDS = '{{ forbidden_keywords }}';
     {% if client_streaming %}
@@ -32,7 +35,8 @@
         --furatic-border-strong: rgba(255, 255, 255, 0.18);
         --furatic-panel: rgba(7, 10, 22, 0.30);
         --furatic-panel-strong: rgba(7, 10, 22, 0.62);
-        --furatic-shadow: 0 16px 34px rgba(0, 0, 0, 0.24);
+        --furatic-shadow: none;
+        --furatic-panel-radius: 30px;
     }
 
     html,
@@ -89,8 +93,8 @@
     
     .furatic-embed-shell:not(.furatic-intro-complete) #music-input-card,
     .furatic-embed-shell:not(.furatic-intro-complete) #current-song,
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > li,
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > .list-group-item {
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > li,
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > .list-group-item {
         opacity: 0;
         transform: translateY(14px) scale(0.965);
         filter: blur(18px);
@@ -107,34 +111,34 @@
         animation-delay: 340ms;
     }
     
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > li,
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > .list-group-item {
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > li,
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > .list-group-item {
         animation-duration: 760ms;
     }
     
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > li:nth-child(1),
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > .list-group-item:nth-child(1) { animation-delay: 480ms; }
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > li:nth-child(1),
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > .list-group-item:nth-child(1) { animation-delay: 480ms; }
     
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > li:nth-child(2),
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > .list-group-item:nth-child(2) { animation-delay: 570ms; }
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > li:nth-child(2),
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > .list-group-item:nth-child(2) { animation-delay: 570ms; }
     
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > li:nth-child(3),
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > .list-group-item:nth-child(3) { animation-delay: 660ms; }
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > li:nth-child(3),
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > .list-group-item:nth-child(3) { animation-delay: 660ms; }
     
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > li:nth-child(4),
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > .list-group-item:nth-child(4) { animation-delay: 750ms; }
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > li:nth-child(4),
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > .list-group-item:nth-child(4) { animation-delay: 750ms; }
     
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > li:nth-child(5),
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > .list-group-item:nth-child(5) { animation-delay: 840ms; }
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > li:nth-child(5),
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > .list-group-item:nth-child(5) { animation-delay: 840ms; }
     
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > li:nth-child(6),
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > .list-group-item:nth-child(6) { animation-delay: 930ms; }
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > li:nth-child(6),
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > .list-group-item:nth-child(6) { animation-delay: 930ms; }
     
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > li:nth-child(7),
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > .list-group-item:nth-child(7) { animation-delay: 1020ms; }
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > li:nth-child(7),
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > .list-group-item:nth-child(7) { animation-delay: 1020ms; }
     
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > li:nth-child(8),
-    .furatic-embed-shell:not(.furatic-intro-complete) #song-queue > .list-group-item:nth-child(8) { animation-delay: 1110ms; }
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > li:nth-child(8),
+    .furatic-embed-shell:not(.furatic-intro-complete) :is(#song-queue, #auto-song-queue, #history-song-queue) > .list-group-item:nth-child(8) { animation-delay: 1110ms; }
     
     .furatic-queue-item-enter {
         opacity: 0;
@@ -172,18 +176,18 @@
         background: transparent !important;
     }
 
-    #song-queue {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) {
         margin-top: 10px;
     }
 
-    #song-queue > li,
-    #song-queue > .list-group-item {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) > li,
+    :is(#song-queue, #auto-song-queue, #history-song-queue) > .list-group-item {
         min-height: 64px;
         padding: 12px 14px !important;
     }
 
-    #song-queue > li[data-next-up-locked="true"],
-    #song-queue > .list-group-item[data-next-up-locked="true"] {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) > li[data-next-up-locked="true"],
+    :is(#song-queue, #auto-song-queue, #history-song-queue) > .list-group-item[data-next-up-locked="true"] {
         padding-top: 17px !important;
     }
 
@@ -252,23 +256,6 @@
         padding-right: 38px;
     }
 
-    .furatic-title-marquee {
-        text-overflow: clip !important;
-        animation: furaticTitleMarquee var(--furatic-title-marquee-duration, 10s) ease-in-out infinite;
-    }
-
-    @keyframes furaticTitleMarquee {
-        0%, 14% {
-            transform: translate3d(0, 0, 0);
-        }
-        52%, 66% {
-            transform: translate3d(var(--furatic-title-scroll-distance, -40px), 0, 0);
-        }
-        100% {
-            transform: translate3d(0, 0, 0);
-        }
-    }
-    
     .list-group-item {
         position: relative;
         overflow: hidden;
@@ -324,7 +311,6 @@
             linear-gradient(180deg, rgba(36, 150, 224, 0.070), rgba(20, 70, 136, 0.028)),
             var(--furatic-panel) !important;
         box-shadow:
-            0 16px 34px rgba(0, 0, 0, 0.24),
             0 0 18px rgba(86, 220, 255, 0.09),
             0 0 42px rgba(38, 180, 255, 0.06),
             0 0 0 1px rgba(114, 232, 255, 0.02);
@@ -971,6 +957,11 @@
             filter 240ms ease,
             visibility 0s;
     }
+
+    .furatic-own-vote-tooltip.is-below { transform: translate3d(-50%, 12px, 0) scale(0.94); transform-origin: top center; }
+    .furatic-own-vote-tooltip.is-below.is-visible { transform: translate3d(-50%, 12px, 0) scale(1); }
+    .furatic-own-vote-tooltip.is-below::before,
+    .furatic-own-vote-tooltip.is-below::after { top: auto; bottom: 100%; border-top: 0; border-bottom: 11px solid rgba(0,0,0,0.5); }
     
     .furatic-own-vote-tooltip::before {
         content: "";
@@ -1061,6 +1052,8 @@
     #toast-container {
         pointer-events: none;
         z-index: 9999;
+        padding: 12px;
+        height: var(--furatic-visible-height, 100dvh) !important;
     }
 
     #toast-container .toast {
@@ -1077,7 +1070,8 @@
             0 18px 46px rgba(0,0,0,0.42) !important;
         -webkit-backdrop-filter: blur(24px) saturate(130%);
         backdrop-filter: blur(24px) saturate(130%);
-        overflow: hidden;
+        max-height: calc(var(--furatic-visible-height, 100dvh) - 24px);
+        overflow-y: auto;
     }
 
     #toast-container .toast-header {
@@ -1094,6 +1088,13 @@
     #toast-container .toast-content {
         color: rgba(238, 244, 255, 0.88) !important;
         line-height: 1.28;
+        min-width: 0;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    html.furatic-framed #toast-container .toast {
+        min-width: min(420px, calc(100vw - var(--desktop-side-space, 0px) - 68px));
+        max-width: min(420px, calc(100vw - var(--desktop-side-space, 0px) - 68px));
     }
 
     #vote-timeout {
@@ -1224,8 +1225,8 @@
     }
 
     /* Final Furatic queue layout polish: duration | title | votes/admin */
-    #song-queue > li,
-    #song-queue > .list-group-item {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) > li,
+    :is(#song-queue, #auto-song-queue, #history-song-queue) > .list-group-item {
         position: relative;
         min-height: 66px !important;
         padding: 10px 10px !important;
@@ -1234,13 +1235,13 @@
         overflow: hidden;
     }
 
-    #song-queue > li[data-next-up-locked="true"],
-    #song-queue > .list-group-item[data-next-up-locked="true"] {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) > li[data-next-up-locked="true"],
+    :is(#song-queue, #auto-song-queue, #history-song-queue) > .list-group-item[data-next-up-locked="true"] {
         padding-top: 10px !important;
         padding-right: 10px !important;
     }
 
-    #song-queue .queue-entry {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-entry {
         display: flex !important;
         flex-direction: row !important;
         flex-wrap: nowrap !important;
@@ -1253,13 +1254,13 @@
         line-height: 1 !important;
     }
 
-    #song-queue .list-group-item.furatic-owned-song .queue-entry,
-    #song-queue > li.furatic-owned-song .queue-entry {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .list-group-item.furatic-owned-song .queue-entry,
+    :is(#song-queue, #auto-song-queue, #history-song-queue) > li.furatic-owned-song .queue-entry {
         padding-left: 42px !important;
         box-sizing: border-box;
     }
 
-    #song-queue .queue-info-time {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-info-time {
         order: 0 !important;
         flex: 0 0 4.4ch !important;
         width: 4.4ch !important;
@@ -1279,7 +1280,7 @@
         margin-left: -2px;
     }
 
-    #song-queue .queue-title {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-title {
         order: 1 !important;
         flex: 1 1 auto !important;
         width: auto !important;
@@ -1296,24 +1297,24 @@
         line-height: 26.5px !important;
     }
 
-    #song-queue .queue-title > strong,
-    #song-queue .queue-title > span {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-title > strong,
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-title > span {
         display: inline !important;
         line-height: 1.18 !important;
         vertical-align: middle !important;
     }
 
-    #song-queue .queue-song-title-text {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-song-title-text {
         display: inline-block;
         transform: translateY(-5px);
     }
     
-    #song-queue .list-group-item[data-next-up-locked="true"] .queue-title,
-    #song-queue > li[data-next-up-locked="true"] .queue-title {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .list-group-item[data-next-up-locked="true"] .queue-title,
+    :is(#song-queue, #auto-song-queue, #history-song-queue) > li[data-next-up-locked="true"] .queue-title {
         padding-right: 18px !important;
     }
 
-    #song-queue .queue-info {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-info {
         order: 2 !important;
         flex: 0 0 auto !important;
         width: auto !important;
@@ -1329,14 +1330,14 @@
         line-height: 1 !important;
     }
 
-    #song-queue .vote-indicators {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .vote-indicators {
         height: 30px !important;
         display: inline-flex !important;
         align-items: center !important;
         align-self: center !important;
     }
 
-    #song-queue .queue-info-controls {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-info-controls {
         height: 30px !important;
         margin: 0 !important;
         padding-right: 0 !important;
@@ -1348,12 +1349,12 @@
         line-height: 1 !important;
     }
 
-    #song-queue .list-group-item[data-next-up-locked="true"] .queue-info-controls,
-    #song-queue > li[data-next-up-locked="true"] .queue-info-controls {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .list-group-item[data-next-up-locked="true"] .queue-info-controls,
+    :is(#song-queue, #auto-song-queue, #history-song-queue) > li[data-next-up-locked="true"] .queue-info-controls {
         padding-right: 0 !important;
     }
 
-    #song-queue .queue-vote-cluster {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-vote-cluster {
         height: 30px !important;
         min-width: 78px;
         display: inline-flex !important;
@@ -1369,9 +1370,9 @@
         padding-right: 20px;
     }
 
-    #song-queue .queue-vote-cluster .vote-up,
-    #song-queue .queue-vote-cluster .vote-down,
-    #song-queue .queue-vote-cluster .queue-vote-count {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-vote-cluster .vote-up,
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-vote-cluster .vote-down,
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-vote-cluster .queue-vote-count {
         height: 28px !important;
         display: inline-flex !important;
         align-items: center !important;
@@ -1385,54 +1386,54 @@
         margin: -5px;
     }
 
-    #song-queue .queue-vote-cluster .vote-up,
-    #song-queue .queue-vote-cluster .vote-down {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-vote-cluster .vote-up,
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-vote-cluster .vote-down {
         min-width: 28px !important;
         min-height: 28px !important;
         padding: 5px !important;
     }
 
-    #song-queue .queue-vote-count {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-vote-count {
         min-width: 2ch !important;
         text-align: center;
         font-weight: 700;
         font-size: 1.18rem;
     }
 
-    #song-queue .own-song-remove {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .own-song-remove {
         top: 50% !important;
         transform: translateY(-50%) scale(0.94);
     }
 
-    #song-queue .own-song-remove.is-visible {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .own-song-remove.is-visible {
         transform: translateY(-50%) scale(1);
     }
 
-    #song-queue .own-song-remove:active {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .own-song-remove:active {
         transform: translateY(-50%) scale(0.96);
     }
 
-    #song-queue .own-song-remove:disabled {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .own-song-remove:disabled {
         transform: translateY(-50%) scale(0.96);
     }
 
-    #song-queue .next-up-lock {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .next-up-lock {
         top: 7px;
         right: 9px;
     }
 
     /* Artwork participates in the row layout, so it can never be clipped by
        the rounded queue card. Voting remains anchored at the right. */
-    #song-queue > li,
-    #song-queue > .list-group-item {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) > li,
+    :is(#song-queue, #auto-song-queue, #history-song-queue) > .list-group-item {
         min-height: 92px !important;
     }
     
-    #song-queue .queue-entry.has-artwork {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-entry.has-artwork {
         padding-left: 0 !important;
     }
     
-    #song-queue .queue-artwork {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-artwork {
         position: static !important;
         order: 0 !important;
         flex: 0 0 72px;
@@ -1442,23 +1443,23 @@
         background: rgba(255,255,255,0.04);
     }
     
-    #song-queue .queue-info-time {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-info-time {
         order: 1 !important;
     }
     
-    #song-queue .queue-title {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-title {
         order: 2 !important;
     }
     
-    #song-queue .queue-info {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .queue-info {
         order: 3 !important;
     }
     
-    #song-queue .furatic-owned-song .queue-artwork {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .furatic-owned-song .queue-artwork {
         margin-left: 38px;
     }
     
-    #song-queue .furatic-owned-song .queue-entry.has-artwork {
+    :is(#song-queue, #auto-song-queue, #history-song-queue) .furatic-owned-song .queue-entry.has-artwork {
         padding-left: 0 !important;
     }
     
@@ -1480,11 +1481,158 @@
             border-radius: 16px !important;
         }
     }
+
+    /* Layout only: original colors, card surfaces and parent width stay intact. */
+    html, body, #content { height: 100%; min-height: 0; }
+    body { overflow: hidden; }
+    .furatic-embed-shell { height: 100%; box-sizing: border-box; display: flex; flex-direction: column; min-height: 0; }
+    .furatic-embed-shell > ul { flex: 0 0 auto; }
+    #music-input-card { display: flex !important; align-items: center; gap: 8px; }
+    #music-input-card .clearable { flex: 1 1 auto; min-width: 0; }
+    .furatic-icon-button, .furatic-list-more { background: transparent; color: var(--furatic-text); border: 0; border-radius: 12px; cursor: pointer; transition: background 220ms ease, transform 220ms ease, opacity 220ms ease; }
+    .furatic-icon-button { width: 38px; height: 38px; flex: 0 0 38px; display: inline-grid; place-items: center; padding: 0; }
+    .furatic-icon-button:hover, .furatic-icon-button:focus-visible, .furatic-icon-button[aria-expanded="true"] { background: rgba(255,255,255,0.08); }
+    .furatic-icon-button:active { transform: scale(0.94); }
+    #current-song-card { margin-left: -8px; margin-right: -8px; }
+    #current-song.present { min-height: 132px; }
+    #current-song { padding: 12px 14px !important; gap: 14px 12px !important; display: grid !important; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: minmax(60px, auto) auto; align-content: center; }
+    #current-song .current-song-top-row { grid-column: 1; grid-row: 1; }
+    #current-song #progress-bar-container { grid-column: 1; grid-row: 2; }
+    #current-song #song-votes { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+    #current-song .current-song-main { min-width: 0; }
+    #current-song .current-song-vote-indicators { max-width: 34px; overflow: hidden; }
+    #current-song .current-song-artwork { width: 60px; height: 60px; flex: 0 0 60px; align-self: center; object-fit: cover; }
+    #current-song .current-song-top-row { min-height: 38px; }
+    #current-song-title { text-decoration: none; cursor: pointer; overflow: hidden; }
+    #current-song #song-votes { margin-top: 0; padding-top: 0; }
+    .current-song-time-row { padding-top: 4px; }
+    .furatic-queue-middle { position: relative; flex: 1 1 auto; min-height: 64px; overflow: hidden; }
+    .furatic-list-scroll { min-height: 0; height: 100%; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.2) transparent; }
+    #song-queue, #auto-song-queue, #history-song-queue { margin-top: 0; padding: 2px 0 8px; position: relative; }
+    .furatic-queue-drawer { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; background: var(--furatic-panel); border-radius: 18px; -webkit-backdrop-filter: blur(18px) saturate(120%); backdrop-filter: blur(18px) saturate(120%); overflow: hidden; }
+    .furatic-queue-drawer[hidden] { display: none; }
+    .furatic-queue-drawer .furatic-list-scroll { flex: 1 1 auto; padding: 0 2px; }
+    .furatic-drawer-note { font-size: .8rem; color: var(--furatic-muted); padding: 8px 12px; margin: 0; }
+    .furatic-drawer-heading { display: flex; flex: 0 0 auto; justify-content: space-between; align-items: center; padding: 8px 12px; }
+    .furatic-drawer-heading small { display: block; color: var(--furatic-muted); }
+    .furatic-list-more { display: block; margin: 8px auto 14px; padding: 10px 14px; }
+    .furatic-list-more[hidden] { display: none; }
+    #auto-queue-dock { flex: 0 0 92px; min-height: 92px; padding: 8px 12px; margin-top: 8px; }
+    #auto-queue-toggle { display: flex; width: 100%; justify-content: space-between; align-items: center; padding: 0 0 8px; border: 0; background: transparent; color: var(--furatic-text); cursor: pointer; }
+    #auto-queue-toggle > i { transition: transform var(--queue-panel-duration, 420ms) cubic-bezier(.4,0,.2,1); }
+    #auto-queue-toggle[aria-expanded="true"] > i { transform: rotate(180deg); }
+    #auto-queue-count { color: var(--furatic-muted); font-size: .8rem; font-weight: normal; padding-left: 6px; }
+    #auto-queue-preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px,1fr)); gap: 8px; color: var(--furatic-muted); font-size: .8rem; transition: opacity var(--queue-panel-duration, 420ms) cubic-bezier(.4,0,.2,1), transform var(--queue-panel-duration, 420ms) cubic-bezier(.4,0,.2,1); }
+    .auto-queue-thumbnail { display: grid; place-items: center; min-width: 0; height: 44px; border-radius: 8px; overflow: hidden; color: var(--furatic-text); background: rgba(255,255,255,0.04); transition: transform 220ms ease; }
+    .auto-queue-thumbnail:hover { transform: translateY(-2px); }
+    .auto-queue-thumbnail[hidden] { display: none; }
+    .auto-queue-thumbnail img { width: 100%; height: 100%; object-fit: cover; }
+    .auto-queue-expanded-note { position: absolute; left: 12px; right: 12px; bottom: 15px; color: var(--furatic-muted); font-size: .8rem; opacity: 0; pointer-events: none; transition: opacity var(--queue-panel-duration, 420ms) cubic-bezier(.4,0,.2,1); margin: 0; }
+    #auto-queue-dock.is-expanded #auto-queue-preview { opacity: 0; transform: translateY(6px); pointer-events: none; }
+    #auto-queue-dock.is-expanded .auto-queue-expanded-note { opacity: 1; }
+    #auto-song-queue .queue-vote-cluster .vote-up, #auto-song-queue .queue-vote-cluster .vote-down, #history-song-queue .queue-info-controls { display: none !important; }
+    #auto-song-queue .queue-vote-cluster { min-width: 2ch; }
+    .vote-up[aria-disabled="true"], .vote-down[aria-disabled="true"] { opacity: .65; }
+    #furatic-closing-banner { flex: 0 0 auto; overflow-y: auto; }
+    #furatic-closing-banner.is-visible { max-height: min(220px, 44vh); }
+    .furatic-embed-shell:has(#furatic-closing-banner.is-visible) .furatic-queue-middle { min-height: 0; }
+    #main-queue-scroll { transition: opacity var(--queue-panel-duration, 420ms) cubic-bezier(.4,0,.2,1); }
+    .furatic-queue-middle:has(.furatic-queue-drawer.is-open) #main-queue-scroll { opacity: 0; }
+    #auto-queue-preview.is-empty { grid-template-columns: 1fr; align-items: center; min-height: 44px; }
+    .ui-autocomplete { max-height: min(240px, 32vh); overflow-y: auto; }
+    @media (max-width: 620px) { #current-song-card { margin-left: -6px; margin-right: -6px; } }
+    @media (max-height: 420px) { #music-input-card .clearable { min-height: 40px; } #current-song { padding-top: 10px !important; padding-bottom: 10px !important; grid-template-rows: minmax(50px, auto) auto; } #current-song .current-song-artwork { width: 50px; height: 50px; flex-basis: 50px; } #furatic-closing-banner.is-visible { max-height: min(120px, 28vh); } #auto-queue-dock { flex-basis: 82px; min-height: 82px; } .auto-queue-thumbnail { height: 34px; } #current-song.present { min-height: 120px; } }
+    /* Match the parent's transparent 20px gutters without widening its surface
+       or moving Search, the ordinary queue and Auto Queue from their old edges. */
+    html.furatic-framed .furatic-embed-shell { padding-left: 30px; padding-right: 30px; }
+    html.furatic-framed #current-song-card { margin-left: -18px; margin-right: -18px; }
+    @media (max-width: 660px) {
+        html.furatic-framed .furatic-embed-shell { padding: 6px 28px 14px; }
+        html.furatic-framed .list-group-item { border-radius: 16px !important; }
+        html.furatic-framed #current-song-card { margin-left: -16px; margin-right: -16px; }
+    }
+    @media (max-width: 460px) { html.furatic-framed #current-song-card { margin-left: -14px; margin-right: -14px; } }
+    @media (prefers-reduced-motion: reduce) { #auto-queue-toggle > i, #auto-queue-preview, .auto-queue-expanded-note, .furatic-icon-button, .auto-queue-thumbnail { transition: none; } }
+
+    .extended-queue-heading { display: none; }
+    html.furatic-desktop-panels .furatic-embed-shell {
+        position: relative;
+        --queue-panel-duration: 600ms;
+        padding-left: calc(30px + var(--desktop-side-space, 136px));
+        transition: padding-left 600ms cubic-bezier(.4,0,.2,1);
+    }
+    html.furatic-desktop-panels .furatic-embed-shell > ul,
+    html.furatic-desktop-panels .furatic-queue-middle { position: relative; z-index: 6; }
+    html.furatic-desktop-panels .furatic-queue-middle { overflow: visible; }
+    html.furatic-desktop-panels .furatic-queue-drawer {
+        position: fixed; inset: 0 auto 0 18px; width: 440px; z-index: 2;
+        border: 1px solid var(--furatic-border); box-shadow: var(--furatic-shadow);
+        clip-path: inset(0 max(0px, calc(458px - var(--desktop-side-space, 136px))) 0 0);
+        transition: clip-path 600ms cubic-bezier(.4,0,.2,1);
+    }
+    html.furatic-desktop-panels .furatic-queue-middle { position: static; z-index: auto; }
+    html.furatic-desktop-panels #main-queue-scroll { position: relative; z-index: 6; opacity: 1; }
+    html.furatic-desktop-panels .furatic-queue-middle:has(.furatic-queue-drawer.is-open) #main-queue-scroll { opacity: 1; }
+    html.furatic-desktop-panels .extended-queue-heading { display: flex; }
+    html.furatic-desktop-panels #auto-queue-dock {
+        position: absolute; inset: 0 auto 0 18px;
+        width: 110px; min-height: 0; margin: 0; padding: 12px 7px; z-index: 8;
+        display: flex; flex-direction: column; align-items: center; gap: 12px;
+        transition: width 600ms cubic-bezier(.4,0,.2,1), left 600ms cubic-bezier(.4,0,.2,1);
+    }
+    html.furatic-desktop-panels.furatic-history-open #auto-queue-dock {
+        left: calc(var(--desktop-side-space, 136px) - 118px);
+    }
+    html.furatic-desktop-panels #auto-queue-toggle { flex-direction: column-reverse; gap: 14px; padding: 0; }
+    html.furatic-desktop-panels #auto-queue-toggle strong { writing-mode: horizontal-tb; transform: none; white-space: normal; text-align: center; line-height: 1.2; }
+    html.furatic-desktop-panels .auto-queue-label > span { display: block; }
+    html.furatic-desktop-panels #auto-queue-count { display: block; padding: 6px 0 0; }
+    html.furatic-desktop-panels #auto-queue-toggle > i { transform: rotate(-90deg); }
+    html.furatic-desktop-panels #auto-queue-toggle[aria-expanded="true"] > i { transform: rotate(90deg); }
+    html.furatic-desktop-panels #auto-queue-preview { grid-template-columns: 1fr; grid-auto-rows: min-content; align-content: start; flex: 1 1 0; width: 100%; overflow: hidden; min-height: 0; text-align: center; }
+    html.furatic-desktop-panels #auto-queue-preview.is-empty { writing-mode: horizontal-tb; width: 100%; line-height: 1.4; }
+    html.furatic-desktop-panels .auto-queue-thumbnail { flex-shrink: 0; width: 100%; height: auto; min-height: 0; aspect-ratio: 1; }
+    html.furatic-desktop-panels .auto-queue-expanded-note { display: none; }
+    html.furatic-desktop-panels #toast-container { padding-left: calc(12px + var(--desktop-side-space, 136px)); transition: padding-left 600ms cubic-bezier(.4,0,.2,1); }
+    @media (prefers-reduced-motion: reduce) {
+        html.furatic-desktop-panels .furatic-embed-shell, html.furatic-desktop-panels #auto-queue-dock,
+        html.furatic-desktop-panels #toast-container, html.furatic-desktop-panels .furatic-queue-drawer { transition: none; }
+    }
+
+
+    /* One pre-queue surface expands from the existing preview into its list. */
+    .furatic-embed-shell { position: relative; }
+    html.furatic-desktop-panels #auto-queue-dock { overflow: hidden; }
+    #auto-queue-dock #auto-drawer { position: static; inset: auto; width: 100%; min-height: 0; flex: 1 1 auto;
+        z-index: auto; border: 0; border-radius: 0; box-shadow: none; background: transparent; backdrop-filter: none;
+        clip-path: none; transform: none; transition: none; }
+    #auto-queue-dock #auto-drawer[hidden] { display: none; }
+    #auto-queue-dock, #history-drawer { border-radius: var(--furatic-panel-radius) !important; }
+    #auto-queue-dock::before { border-radius: calc(var(--furatic-panel-radius) - 1px); }
+    .queue-title .furatic-title-content > strong,
+    .queue-title .furatic-title-content > span { display: inline !important; line-height: 1.18 !important; vertical-align: middle !important; }
+    html.furatic-desktop-panels #auto-queue-dock.is-expanded #auto-queue-preview { display: none; transform: none; }
+    html.furatic-desktop-panels #auto-queue-dock.is-expanded { width: calc(var(--desktop-side-space, 136px) - 36px); padding: 12px; }
+    html.furatic-desktop-panels #auto-queue-dock.is-expanded #auto-queue-toggle { flex-direction: row; justify-content: space-between; }
+    html.furatic-desktop-panels #auto-queue-dock.is-expanded #auto-queue-toggle strong { text-align: left; }
+    html.furatic-desktop-panels #auto-queue-dock.is-expanded #auto-queue-count { display: inline; padding: 0 0 0 8px; }
+    html.furatic-mobile-compact #content { width: calc(100% / .93); height: calc(100% / .93);
+        transform: scale(.93); transform-origin: top left; }
+    #content { width: 100%; transition: transform 600ms cubic-bezier(.4,0,.2,1), width 600ms cubic-bezier(.4,0,.2,1), height 600ms cubic-bezier(.4,0,.2,1); }
+    @media (max-height: 340px) {
+        html.furatic-mobile-compact .furatic-queue-middle { min-height: 16px; }
+        html.furatic-mobile-compact #current-song { min-height: 96px; padding: 6px 10px !important; gap: 6px !important; grid-template-rows: minmax(38px,auto) auto; }
+        html.furatic-mobile-compact #current-song .current-song-artwork { width: 38px; height: 38px; flex-basis: 38px; }
+        html.furatic-mobile-compact #auto-queue-dock { flex-basis: 60px; min-height: 60px; }
+        html.furatic-mobile-compact .auto-queue-thumbnail { height: 24px; }
+    }
+    @media (prefers-reduced-motion: reduce) { #content { transition: none; } }
 </style>
 
 <div class="furatic-embed-shell">
     <ul class="list-group">
         <li class="list-group-item" id="music-input-card">
+            <button id="queue-history-button" type="button" class="furatic-icon-button" aria-label="Recently played songs" aria-controls="history-drawer" aria-expanded="false"><i class="fas fa-history" aria-hidden="true"></i></button>
             <span class="clearable">
                 <input class="form-control" id="music-input" placeholder="Search for music or enter a YouTube link..." autofocus autocomplete="off">
                 <i class="fas fa-times" id="clearbutton"></i>
@@ -1511,7 +1659,7 @@
                 {% endif %}
                 <div class="current-song-main">
                     <div class="autoscrolling-container">
-                        <span id="current-song-title">No music in queue</span>
+                        <a id="current-song-title" target="_blank" rel="noopener noreferrer">No music in queue</a>
                     </div>
                 </div>
             </div>
@@ -1534,10 +1682,25 @@
         </li>
     </ul>
 
-    <ul class="list-group" id="song-queue"></ul>
+    <div class="furatic-queue-middle">
+        <div id="main-queue-scroll" class="furatic-list-scroll"><ul class="list-group" id="song-queue"></ul></div>
+        <section id="history-drawer" class="furatic-queue-drawer" aria-label="Recently played" aria-hidden="true" hidden inert>
+            <div class="furatic-drawer-heading"><div><strong>Recently played</strong><small>Last 12 hours · newest first</small></div><button id="history-close" type="button" class="furatic-icon-button" aria-label="Close recently played"><i class="fas fa-times" aria-hidden="true"></i></button></div>
+            <div class="furatic-list-scroll"><ul class="list-group" id="history-song-queue"></ul><p id="history-status" class="furatic-drawer-note" role="status"></p><button id="history-more" type="button" class="furatic-list-more" hidden>Show earlier songs</button></div>
+        </section>
+    </div>
+    <section id="auto-queue-dock" class="list-group-item" aria-label="pre-queue preview">
+        <button id="auto-queue-toggle" type="button" aria-expanded="false" aria-controls="auto-drawer"><strong><span class="auto-queue-label"><span>pre-queue</span></span> <span id="auto-queue-count">0</span></strong><i class="fas fa-chevron-up" aria-hidden="true"></i></button>
+        <div id="auto-queue-preview">No extra songs waiting.</div>
+        <p class="auto-queue-expanded-note">Voting starts after it enters the main queue.</p>
+        <section id="auto-drawer" class="furatic-queue-drawer" aria-label="pre-queue" aria-hidden="true" hidden inert>
+            <p class="furatic-drawer-note">Voting starts after it enters the main queue.</p>
+            <div class="furatic-list-scroll"><ul class="list-group" id="auto-song-queue"></ul><p id="auto-queue-empty" class="furatic-drawer-note">No extra songs waiting.</p></div>
+        </section>
+    </section>
 
     <div id="furatic-closing-banner" aria-live="polite" aria-hidden="true">
-        <strong>Closing time: Furatic's Pass The Aux event will be closing soon.</strong>
+        <strong>Our Pass The Aux event will be closing soon.</strong>
         <span>
             We are no longer accepting new songs. To be notified for future events,
             please join our group and Discord, or follow us on BlueSky. Thanks for coming!
@@ -1605,8 +1768,10 @@
     let ownVoteTooltipAnchor = null;
 
     try {
-        window.localStorage.removeItem("furatic-owned-song-pending-v1");
-        window.localStorage.removeItem("furatic-owned-song-claims-v1");
+        if (!window.FURATIC_TUTORIAL_PLAYER) {
+            window.localStorage.removeItem("furatic-owned-song-pending-v1");
+            window.localStorage.removeItem("furatic-owned-song-claims-v1");
+        }
     } catch (_error) {
         // ignore
     }
@@ -1797,7 +1962,7 @@
     }
 
     function getQueueRows() {
-        return Array.from(document.querySelectorAll("#song-queue > li, #song-queue > .list-group-item"));
+        return Array.from(document.querySelectorAll("#song-queue > li:not(.furatic-queue-exit), #auto-song-queue > li:not(.furatic-queue-exit)"));
     }
 
     function getCurrentSongRow() {
@@ -1864,7 +2029,7 @@
                 button.classList.remove("furatic-vote-bump");
             } else {
                 button.removeAttribute("data-furatic-own-vote-blocked");
-                button.removeAttribute("aria-disabled");
+                if (button.dataset.votePending === "true" || button.dataset.voteKnown === "false") button.setAttribute("aria-disabled", "true"); else button.removeAttribute("aria-disabled");
             }
         });
     }
@@ -1880,7 +2045,7 @@
     
         const buttonRect = button.getBoundingClientRect();
         const tooltipRect = tooltip.getBoundingClientRect();
-        const isQueueAnchoredButton = !!button.closest("#song-queue");
+        const isQueueAnchoredButton = !!button.closest("#song-queue, #auto-song-queue");
         const isNextUpLockButton = button.classList.contains("next-up-lock");
         const tooltipNudge = isNextUpLockButton ? 18 : 0;
         const arrowNudge = isNextUpLockButton ? 20 : 0;
@@ -1918,9 +2083,13 @@
             if (minLeft <= maxLeft) {
                 left = Math.max(minLeft, Math.min(maxLeft, left));
             }
+            arrowLeft = Math.max(18, Math.min(tooltipRect.width - 18,
+                buttonRect.left + buttonRect.width / 2 - (left - tooltipRect.width / 2))).toFixed(2) + "px";
         }
     
-        const top = Math.max(tooltipRect.height + 18, buttonRect.top);
+        const below = !isQueueAnchoredButton && buttonRect.top < tooltipRect.height + 18;
+        tooltip.classList.toggle("is-below", below);
+        const top = below ? buttonRect.bottom : Math.max(tooltipRect.height + 18, buttonRect.top);
     
         tooltip.style.setProperty("--furatic-tooltip-arrow-left", arrowLeft);
         tooltip.style.left = left.toFixed(2) + "px";
@@ -2138,36 +2307,6 @@
         ownedOrbAnimationFrame = window.requestAnimationFrame(animateOwnedOrbs);
     }
 
-    function syncTitleMarquees() {
-        const titles = Array.from(document.querySelectorAll("#current-song-title, .queue-title"));
-
-        titles.forEach(function (title) {
-            title.classList.remove("furatic-title-marquee");
-            title.style.removeProperty("--furatic-title-scroll-distance");
-            title.style.removeProperty("--furatic-title-marquee-duration");
-
-            const parent = title.parentElement;
-            if (!parent) {
-                return;
-            }
-
-            const available = parent.clientWidth;
-            const needed = title.scrollWidth;
-            const overflow = needed - available;
-
-            if (overflow <= 16) {
-                return;
-            }
-
-            const distance = overflow + 18;
-            const duration = Math.max(7, Math.min(18, 4 + (distance * 0.035)));
-
-            title.style.setProperty("--furatic-title-scroll-distance", "-" + distance.toFixed(0) + "px");
-            title.style.setProperty("--furatic-title-marquee-duration", duration.toFixed(2) + "s");
-            title.classList.add("furatic-title-marquee");
-        });
-    }
-    
     function showInlineError(message) {
         const toast = document.getElementById("error-toast");
         const content = toast ? toast.querySelector(".toast-content") : null;
@@ -2207,7 +2346,6 @@
         window.requestAnimationFrame(function () {
             decorateQueued = false;
             applyOwnSongDecorations();
-            syncTitleMarquees();
         });
     }
 
@@ -2300,7 +2438,10 @@
         });
 
         const currentSongRow = getCurrentSongRow();
-        if (currentSongRow) {
+        const autoQueue = document.getElementById("auto-song-queue");
+    if (autoQueue) observer.observe(autoQueue, {childList: true});
+
+    if (currentSongRow) {
             const currentKey = getQueueKey(currentSongRow);
             const isOwnedCurrent = currentKey !== null &&
                 ownCurrentSongKey !== null &&
@@ -2316,14 +2457,50 @@
         }
     }
 
+    function applyOwnSongState(data) {
+        document.dispatchEvent(new CustomEvent("furatic:personal-votes", {detail: data.myVotes || []}));
+        ownQueueKeys.clear();
+        if (Array.isArray(data.songs)) {
+            data.songs.forEach(function (song) {
+                const key = Number(song.queueKey);
+                if (Number.isFinite(key) && key > 0) {
+                    ownQueueKeys.add(key);
+                }
+            });
+        }
+
+        const nextCurrent = Number(data.currentSongQueueKey);
+        ownCurrentSongKey = Number.isFinite(nextCurrent) && nextCurrent > 0 ? nextCurrent : null;
+
+        Array.from(pendingRemovals).forEach(function (key) {
+            if (!ownQueueKeys.has(key)) {
+                pendingRemovals.delete(key);
+            }
+        });
+
+        scheduleDecorate();
+    }
+
+    let ownStateInFlight = false;
     async function refreshOwnSongState() {
+        if (window.FURATIC_TUTORIAL_PLAYER) {
+            applyOwnSongState(window.furaticTutorialOwnState || {});
+            return;
+        }
+        if (ownStateInFlight) return;
+        ownStateInFlight = true;
+        const abort = new AbortController();
+        const timeout = window.setTimeout(() => abort.abort(), 9000);
         const ownSongStateUrl = urls["musiq"] && urls["musiq"]["own-song-state"];
         if (!ownSongStateUrl) {
+            ownStateInFlight = false;
+            window.clearTimeout(timeout);
             return;
         }
 
         try {
             const response = await fetch(ownSongStateUrl, {
+                signal: abort.signal,
                 credentials: "same-origin",
                 cache: "no-store"
             });
@@ -2334,28 +2511,12 @@
 
             const data = await response.json();
 
-            ownQueueKeys.clear();
-            if (Array.isArray(data.songs)) {
-                data.songs.forEach(function (song) {
-                    const key = Number(song.queueKey);
-                    if (Number.isFinite(key) && key > 0) {
-                        ownQueueKeys.add(key);
-                    }
-                });
-            }
-
-            const nextCurrent = Number(data.currentSongQueueKey);
-            ownCurrentSongKey = Number.isFinite(nextCurrent) && nextCurrent > 0 ? nextCurrent : null;
-
-            Array.from(pendingRemovals).forEach(function (key) {
-                if (!ownQueueKeys.has(key)) {
-                    pendingRemovals.delete(key);
-                }
-            });
-
-            scheduleDecorate();
+            applyOwnSongState(data);
         } catch (_error) {
             // silent retry on next poll
+        } finally {
+            ownStateInFlight = false;
+            window.clearTimeout(timeout);
         }
     }
 
@@ -2452,7 +2613,7 @@
             event.preventDefault();
             event.stopPropagation();
 
-            const row = removeButton.closest("#song-queue > li, #song-queue > .list-group-item");
+            const row = removeButton.closest("#song-queue > li, #song-queue > .list-group-item, #auto-song-queue > li");
             const key = Number(removeButton.getAttribute("data-queue-key") || (row && row.getAttribute("data-queue-key")) || 0);
 
             if (row && Number.isFinite(key) && key > 0) {
@@ -2491,9 +2652,9 @@
     scheduleIntroCompletion();
     refreshOwnSongState();
     scheduleDecorate();
-    syncTitleMarquees();
     ensureOwnedOrbAnimation();
-    window.setInterval(refreshOwnSongState, OWN_SONG_POLL_MS);
+    if (!window.FURATIC_TUTORIAL_PLAYER) window.setInterval(refreshOwnSongState, OWN_SONG_POLL_MS);
+    document.addEventListener("furatic:refresh-personal-votes", refreshOwnSongState);
 
     if (window.jQuery) {
         window.jQuery("#current-song-title").on("change", scheduleDecorate);

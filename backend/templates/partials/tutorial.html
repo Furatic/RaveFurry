@@ -1,0 +1,31 @@
+{% load static %}
+<dialog id="furatic-tutorial" class="ft-dialog" aria-modal="true" aria-labelledby="ft-title">
+  <div class="ft-panel">
+    <header class="ft-header">
+      <h2 id="ft-title" tabindex="-1" autofocus>Welcome to FURATIC!</h2>
+      <button type="button" class="ft-button ft-close" id="ft-close" aria-label="Close tutorial"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+    </header>
+    <div class="ft-hub" id="ft-hub">
+      <p>Would you like to learn how these features work?</p>
+      <div class="ft-topics">
+        <button type="button" class="ft-button" data-topic="adding">Adding music</button>
+        <button type="button" class="ft-button" data-topic="voting">Voting on songs</button>
+        <button type="button" class="ft-button" data-topic="multiple">Adding several songs</button>
+        <button type="button" class="ft-button" data-topic="prequeue">How the pre-queue works</button>
+      </div>
+      <p class="ft-small">You can close this window at any time and reopen it using the question mark above the TV button.</p>
+    </div>
+    <section class="ft-lesson" id="ft-lesson" hidden>
+      <div class="ft-narrator"><span class="ft-narrator-portrait" aria-hidden="true"><img src="{% static 'tutorial/narrator.png' %}" alt="" width="112" height="112"></span><p id="ft-instruction" aria-live="polite" aria-atomic="true"></p></div>
+      <div class="ft-player-region" id="ft-player-region"><p id="ft-loading" role="status">Loading the player…</p></div>
+      <footer class="ft-footer">
+        <button type="button" class="ft-button" id="ft-back">All tutorials</button>
+        <span id="ft-step" class="ft-small"></span>
+        <button type="button" class="ft-button" id="ft-next" hidden>Continue</button>
+      </footer>
+      <p class="ft-practice-note">Practice only. No songs or votes are submitted.</p>
+    </section>
+  </div>
+</dialog>
+<script src="{% static 'tutorial/cues.js' %}?v=5" defer></script>
+<script src="{% static 'tutorial/tutorial.js' %}?v=5" defer></script>

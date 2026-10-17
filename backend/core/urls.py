@@ -26,12 +26,19 @@ from core.settings import system
 from core.settings import wifi
 from core import state_handler
 from core import ui_notifications
+from core import visualizer
+from core import tutorial
 from core.authentication import ModeratorAuthenticationForm
 
 urlpatterns: List[Union[URLPattern, URLResolver]] = [
+    path("visualizer/background/", visualizer.background, name="visualizer-background"),
+    path("visualizer/features.json", visualizer.features, name="visualizer-features"),
     path("", base.landing, name="base"),
     path("afterhours/", base.afterhours, name="afterhours"),
+    path("afterhours/top-songs/", base.afterhours_top_songs, name="afterhours-top-songs"),
+    path("afterhours/history/", base.afterhours_history, name="afterhours-history"),
     path("p/", musiq.embed, name="musiq"),
+    path("tutorial/player/", tutorial.player, name="tutorial-player"),
     path("musiq/", RedirectView.as_view(pattern_name="base", permanent=False)),
     path("lights/", lights.index, name="lights"),
     path("stream/", base.no_stream, name="no-stream"),

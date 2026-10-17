@@ -35,7 +35,7 @@
 			{% block js %}
 			{% endblock %}
 		</script>
-		<script src="{% static "bundle.js" %}?v={{ static_asset_version }}"></script>
+		{% block player_bundle %}<script src="{% static "bundle.js" %}?v={{ static_asset_version }}"></script>{% endblock %}
 		<script>
 		  (function() {
 		    function installAutocompleteStub(jq) {

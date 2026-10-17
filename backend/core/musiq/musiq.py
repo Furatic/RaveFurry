@@ -48,7 +48,7 @@ def ordered_queue_queryset():
     if voting_enabled:
         natural_order = all_songs.annotate(
             effective_votes=Case(
-                When(votes__gte=1, then=F("votes")),
+                When(priority_tier="normal", votes__gte=1, then=F("votes")),
                 default=Value(1),
                 output_field=IntegerField(),
             )
@@ -58,6 +58,7 @@ def ordered_queue_queryset():
 
     locked_key = next_up.resolve_locked_queue_key(
         natural_order.filter(
+            priority_tier="normal",
             review_status__in=["clear", "approved"],
         ).exclude(internal_url=None).values_list("id", flat=True),
         allow_new_lock=CurrentSong.objects.exists(),
@@ -66,7 +67,7 @@ def ordered_queue_queryset():
     if voting_enabled:
         ordered = all_songs.annotate(
             effective_votes=Case(
-                When(votes__gte=1, then=F("votes")),
+                When(priority_tier="normal", votes__gte=1, then=F("votes")),
                 default=Value(1),
                 output_field=IntegerField(),
             )
@@ -201,8 +202,10 @@ def try_providers(
             )
             # the current provider could provide the song, don't try the other ones
             break
-        except ProviderError:
+        except ProviderError as error:
             # this provider cannot provide this song, use the next provider
+            if not provider.error:
+                provider.error = str(error)
             # if this was the last provider, show its error
             # in new music only mode, do not allow fallbacks
             if storage.get("new_music_only") or provider == last_provider:
@@ -337,6 +340,18 @@ def request_music(request: WSGIRequest) -> HttpResponse:
     with transaction.atomic():
         # Serialize ownership assignment after placeholder creation; worker
         # threads must never be asked to use an uncommitted queue row.
+        from core import queue_lock
+        queue_lock.acquire()
+        if not site_mode.accepts_song_requests():
+            try:
+                queue.remove(queued_song.id)
+            except QueuedSong.DoesNotExist:
+                pass
+            transaction.on_commit(playback.queue_changed.set)
+            return HttpResponseBadRequest(
+                "Closing time: we are no longer accepting new songs. Thanks for coming!"
+                if site_mode.is_closing() else "FURATIC is currently in After Hours mode."
+            )
         from core.models import ClientIdentity  # pylint: disable=import-outside-toplevel
 
         ClientIdentity.objects.select_for_update().get(pk=identity.pk)
@@ -363,6 +378,9 @@ def request_music(request: WSGIRequest) -> HttpResponse:
             requester_token=requester_token,
             priority_tier="extra" if has_primary else "normal",
         )
+        queued_song.refresh_from_db()
+        from core import voting
+        voting.seed_requester_vote(request, queued_song)
         queue.rebalance_priorities()
 
     user_manager.remember_requester_ip(
@@ -386,11 +404,18 @@ def request_music(request: WSGIRequest) -> HttpResponse:
         song_title=queued_song.displayname(),
     )
     update_state()
+    provider.submission_token = requester_token
+    song_number = active_count + 1
+    ordinal = str(song_number) + {2: "nd", 3: "rd"}.get(song_number, "th")
+    provider.submission_message = (
+        f"Added your {ordinal} song to the pre-queue."
+        if has_primary else provider.ok_message
+    )
+    provider.submission_query = query
+    user_manager.remember_request_cooldown(requester_ip, session_key)
     provider.start_deferred_enqueue()
 
-    user_manager.remember_request_cooldown(requester_ip, session_key)
-
-    return JsonResponse({"message": provider.ok_message, "key": queue_key})
+    return JsonResponse({"message": provider.submission_message, "key": queue_key, "pending": True})
 
 
 @user_manager.tracked
@@ -500,7 +525,8 @@ def state_dict() -> Dict[str, Any]:
 
     musiq_state["siteMode"] = site_mode.get_mode()
     musiq_state["paused"] = storage.get("paused")
-    musiq_state["shuffle"] = storage.get("shuffle")
+    # Keep the state key for older clients, but ignore previously saved shuffle.
+    musiq_state["shuffle"] = False
     musiq_state["repeat"] = storage.get("repeat")
     musiq_state["autoplay"] = storage.get("autoplay")
     musiq_state["volume"] = storage.get("volume")
@@ -508,6 +534,7 @@ def state_dict() -> Dict[str, Any]:
     try:
         current_song = CurrentSong.objects.get()
         current_song_dict = model_to_dict(current_song)
+        current_song_dict["occurrence_id"] = str(current_song.occurrence_id)
         current_song_dict = util.camelize(current_song_dict)
 
         original_duration = float(current_song.duration or 0.0)
@@ -564,7 +591,11 @@ def state_dict() -> Dict[str, Any]:
     total_time = 0
     locked_queue_key = next_up.get_locked_queue_key()
     for song in ordered_queue_queryset():
+        if not song.internal_url:
+            # Reserve ownership/limits privately until the downloaded song is ready.
+            continue
         song_dict = model_to_dict(song)
+        song_dict["occurrence_id"] = str(song.occurrence_id)
         song_dict = util.camelize(song_dict)
         song_dict["isNextUpLocked"] = locked_queue_key is not None and song.id == locked_queue_key
         song_dict["durationFormatted"] = song_utils.format_seconds(

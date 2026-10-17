@@ -1,7 +1,8 @@
 import {keyOfElement} from './buttons';
 import {state} from './update';
 import {warningToastWithBar, errorToast} from '../base';
-import {setStoredVote} from './vote-state';
+import {getVoteState, acceptVote, setVotePending, paintVotes} from './vote-state';
+import {getState} from '../base';
 
 /** Adds handlers to buttons that are visible when voting is enabled. */
 export function onReady() {
@@ -124,106 +125,64 @@ export function onReady() {
     return keyOfElement(button);
   }
 
-  function submitVote(button, key, amount, onFail = null) {
-    let votes = button.closest('.queue-entry').find('.queue-vote-count');
-    if (votes.length == 0) {
-      votes = button.siblings('#current-song-votes');
+  async function handleVotePress(buttonElement) {
+    const button = $(buttonElement);
+    const row = button.closest('[data-occurrence-id]');
+    const occurrence = row.attr('data-occurrence-id');
+    const previous = getVoteState(occurrence);
+    if (button.attr('data-furatic-own-vote-blocked') === 'true' ||
+        row.attr('data-priority-tier') === 'extra' ||
+        button.attr('data-vote-pending') === 'true') return false;
+    if (!previous) {
+      document.dispatchEvent(new CustomEvent('furatic:refresh-personal-votes'));
+      return false;
     }
-
-    const currentVotes = Number(votes.text()) || 0;
-    votes.text(String(currentVotes + amount));
-
+    const key = resolveVoteKey(button);
+    if (key === -1 || !canVote()) return false;
+    const direction = button.hasClass('vote-up') ? 1 : -1;
+    const desired = previous.choice === direction ? 0 : direction;
+    const voteCount = row.find('.queue-vote-count, #current-song-votes');
+    const originalCount = Number(voteCount.text()) || 0;
+    const mutation = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() :
+      Date.now().toString(36) + '-' + Math.random().toString(36).slice(2) + '-' + Math.random().toString(36).slice(2);
+    acceptVote({...previous, choice: desired}, true);
+    setVotePending(occurrence, true);
+    voteCount.text(String(originalCount + desired - previous.choice));
+    triggerVoteAnimation(buttonElement);
     const form = new URLSearchParams();
     form.set('key', String(key));
-    form.set('amount', String(amount));
+    form.set('occurrence', occurrence);
+    form.set('choice', String(desired));
+    form.set('revision', String(previous.voteRevision));
+    form.set('mutation', mutation);
     form.set('csrfmiddlewaretoken', CSRF_TOKEN);
-
-    fetch(urls['musiq']['vote'], {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-        'X-CSRFToken': CSRF_TOKEN,
-      },
-      body: form.toString(),
-    }).then(async function(response) {
-      if (response.ok) {
-        return;
+    const abort = new AbortController();
+    const timeout = window.setTimeout(() => abort.abort(), 9000);
+    try {
+      const response = await fetch(urls['musiq']['vote'], {
+        method: 'POST', credentials: 'same-origin', signal: abort.signal,
+        headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-CSRFToken': CSRF_TOKEN},
+        body: form.toString(),
+      });
+      const result = await response.json();
+      if (result.occurrenceId && typeof result.choice === 'number') {
+        acceptVote(result, true);
+        if (typeof result.votes === 'number') voteCount.text(String(result.votes));
       }
-
-      const text = await response.text();
-      throw new Error(text || 'Could not register vote');
-    }).catch(function(error) {
-      errorToast(error && error.message ? error.message : 'Could not register vote');
-
-      const failedVotes = Number(votes.text()) || 0;
-      votes.text(String(failedVotes - amount));
-
-      if (onFail) {
-        onFail();
+      if (!response.ok) {
+        if (!result.occurrenceId) acceptVote(previous, true);
+        throw new Error(result.message || 'Could not register vote');
       }
-    });
-  }
-
-  function handleVotePress(buttonElement) {
-    const button = $(buttonElement);
-
-    if (button.attr('data-furatic-own-vote-blocked') === 'true') {
-      return false;
+    } catch (error) {
+      // A timed-out POST may have committed. Re-read; never retry a mutation blindly.
+      errorToast(error && error.message && error.name !== 'AbortError' ? error.message : 'Checking your vote after a connection interruption.');
+    } finally {
+      window.clearTimeout(timeout);
+      setVotePending(occurrence, false);
+      document.dispatchEvent(new CustomEvent('furatic:refresh-personal-votes'));
+      getState();
+      paintVotes();
     }
-
-    const key = resolveVoteKey(button);
-    if (key == -1) {
-      return false;
-    }
-
-    if (!canVote()) {
-      return false;
-    }
-
-    const direction = button.hasClass('vote-up') ? 'up' : 'down';
-    const up = direction === 'up' ? button : button.siblings('.vote-up');
-    const down = direction === 'down' ? button : button.siblings('.vote-down');
-    const previousState = up.hasClass('pressed') ? '+' : down.hasClass('pressed') ? '-' : '0';
-
-    function applyVisualVoteState(value) {
-      up.removeClass('pressed');
-      down.removeClass('pressed');
-
-      if (value === '+') {
-        up.addClass('pressed');
-      } else if (value === '-') {
-        down.addClass('pressed');
-      }
-
-      setStoredVote(key, value);
-    }
-
-    function restorePreviousState() {
-      applyVisualVoteState(previousState);
-    }
-
-    triggerVoteAnimation(buttonElement);
-
-    if (direction === 'up') {
-      if (up.hasClass('pressed')) {
-        applyVisualVoteState('0');
-        submitVote(button, key, -1, restorePreviousState);
-      } else {
-        applyVisualVoteState('+');
-        submitVote(button, key, down.hasClass('pressed') ? 2 : 1, restorePreviousState);
-      }
-      return true;
-    }
-
-    if (down.hasClass('pressed')) {
-      applyVisualVoteState('0');
-      submitVote(button, key, 1, restorePreviousState);
-    } else {
-      applyVisualVoteState('-');
-      submitVote(button, key, up.hasClass('pressed') ? -2 : -1, restorePreviousState);
-    }
-
     return true;
   }
 
@@ -243,6 +202,10 @@ export function onReady() {
 
     handleVotePress(buttonElement);
   }
+
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') handleVoteActivation(event);
+  }, {capture: true});
 
   document.addEventListener('pointerup', handleVoteActivation, {
     capture: true,

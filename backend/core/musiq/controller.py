@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import datetime
 import subprocess
+import re
+import uuid
 from functools import wraps
 from typing import Callable
 
@@ -58,7 +60,7 @@ def restart(_request: WSGIRequest) -> None:
     try:
         current_song = models.CurrentSong.objects.get()
         current_song.created = timezone.now()
-        current_song.save()
+        current_song.save(update_fields=['created'])
         playback_state_backup.snapshot()
     except models.CurrentSong.DoesNotExist:
         pass
@@ -73,7 +75,7 @@ def seek_backward(_request: WSGIRequest) -> None:
         now = timezone.now()
         current_song.created += datetime.timedelta(seconds=SEEK_DISTANCE)
         current_song.created = min(current_song.created, now)
-        current_song.save()
+        current_song.save(update_fields=['created'])
         playback_state_backup.snapshot()
     except models.CurrentSong.DoesNotExist:
         pass
@@ -89,7 +91,7 @@ def _resume() -> None:
         pause_duration = (now - current_song.last_paused).total_seconds()
         current_song.created += datetime.timedelta(seconds=pause_duration)
         current_song.created = min(current_song.created, now)
-        current_song.save()
+        current_song.save(update_fields=['created'])
     except models.CurrentSong.DoesNotExist:
         pass
 
@@ -109,7 +111,7 @@ def _pause() -> None:
     try:
         current_song = models.CurrentSong.objects.get()
         current_song.last_paused = timezone.now()
-        current_song.save()
+        current_song.save(update_fields=['last_paused'])
     except models.CurrentSong.DoesNotExist:
         pass
 
@@ -132,17 +134,19 @@ def seek_forward(_request: WSGIRequest) -> None:
     try:
         current_song = models.CurrentSong.objects.get()
         current_song.created -= datetime.timedelta(seconds=SEEK_DISTANCE)
-        current_song.save()
+        current_song.save(update_fields=['created'])
         playback_state_backup.snapshot()
     except models.CurrentSong.DoesNotExist:
         pass
 
 
-def _skip(reason: str = "manual") -> None:
+def _skip(reason: str = "manual", expected_occurrence=None) -> None:
     skipped_song_title = ""
 
     try:
         current_song = models.CurrentSong.objects.get()
+        if expected_occurrence is not None and current_song.occurrence_id != expected_occurrence:
+            return
         skipped_song_title = current_song.displayname()
     except models.CurrentSong.DoesNotExist:
         current_song = None
@@ -154,7 +158,8 @@ def _skip(reason: str = "manual") -> None:
         current_song.created = timezone.now() - datetime.timedelta(
             seconds=current_song.duration
         )
-        current_song.save()
+        current_song.playback_outcome = "skipped"
+        current_song.save(update_fields=["created", "playback_outcome"])
         playback_state_backup.snapshot()
 
     if not skipped_song_title:
@@ -193,12 +198,9 @@ def skip(_request: WSGIRequest) -> None:
 
 
 @control
-def set_shuffle(request: WSGIRequest) -> None:
-    """Enables or disables shuffle depending on the given value.
-    If enabled, a random song in the queue is chosen as the next one.
-    If not, the first one is chosen."""
-    enabled = request.POST.get("value") == "true"
-    storage.put("shuffle", enabled)
+def set_shuffle(_request: WSGIRequest) -> None:
+    """Keep the legacy endpoint safe for already-open clients: shuffle is retired."""
+    storage.put("shuffle", False)
 
 
 @control
@@ -247,10 +249,10 @@ def set_volume(request: WSGIRequest) -> HttpResponse:
 
 @control
 def shuffle_all(request: WSGIRequest) -> HttpResponse:
-    """Shuffles the queue. Only admin is permitted to do this."""
+    """Accept legacy admin requests without changing the fair queue order."""
     if not user_manager.is_admin(request.user):
         return HttpResponseForbidden()
-    playback.queue.shuffle()
+    storage.put("shuffle", False)
     return HttpResponse()
 
 
@@ -260,7 +262,11 @@ def remove_all(request: WSGIRequest) -> HttpResponse:
     if not user_manager.is_admin(request.user):
         return HttpResponseForbidden()
 
+    from core import queue_lock, voting
     with transaction.atomic():
+        queue_lock.acquire()
+        for occurrence in playback.queue.values_list("occurrence_id", flat=True):
+            voting.retire(occurrence)
         user_manager.clear_queue_slots()
         playback.queue.all().delete()
 
@@ -410,10 +416,17 @@ def own_song_state(request: WSGIRequest) -> HttpResponse:
     ):
         current_song_queue_key = current_song.queue_key
 
-    return JsonResponse({
+    from core import voting
+    active_songs = list(musiq.ordered_queue_queryset())
+    if current_song:
+        active_songs.append(current_song)
+    response = JsonResponse({
         "songs": songs,
         "currentSongQueueKey": current_song_queue_key,
+        "myVotes": voting.personal_state(request, active_songs),
     })
+    response["Cache-Control"] = "private, no-store"
+    return response
 
 @control
 def reorder(request: WSGIRequest) -> HttpResponse:
@@ -443,62 +456,69 @@ def reorder(request: WSGIRequest) -> HttpResponse:
 @csrf_exempt
 @user_manager.tracked
 def vote(request: WSGIRequest) -> HttpResponse:
-    """Modify the vote-count of the given song by the given amount.
-    If a song receives too many downvotes, it is removed."""
-    key_param = request.POST.get("key")
-    amount_param = request.POST.get("amount")
-    if key_param is None or amount_param is None:
-        return HttpResponseBadRequest()
-    key = int(key_param)
-    amount = int(amount_param)
-    if amount < -2 or amount > 2 or amount == 0:
-        return HttpResponseBadRequest()
-
-    if storage.get("ip_checking") and not user_manager.try_vote(
-        user_manager.get_client_ip(request), key, amount
-    ):
-        return HttpResponseBadRequest("nice try")
-
-    if storage.get("color_indication") != storage.Privileges.nobody:
-        user_manager.register_vote(request, key, amount)
-
-    current_vote_updated = models.CurrentSong.objects.filter(queue_key=key).update(
-        votes=F("votes") + amount
-    )
-    if current_vote_updated:
-        playback_state_backup.snapshot()
+    """Apply a durable vote, retaining compatibility with older delta clients."""
+    from core import voting
 
     try:
-        current_song = models.CurrentSong.objects.get()
-        if (
-            current_song.queue_key == key
-            and current_song.votes
-            <= -storage.get(  # pylint: disable=invalid-unary-operand-type
-                "downvotes_to_kick"
-            )
-        ):
-            _skip(reason="downvote")
-    except models.CurrentSong.DoesNotExist:
-        pass
-
-    removed = playback.queue.vote(
-        key,
-        amount,
-        -storage.get("downvotes_to_kick"),  # pylint: disable=invalid-unary-operand-type
-    )
-    # if we removed a song by voting, and it was added by autoplay,
-    # we want it to be the new basis for autoplay
+        key = int(request.POST["key"])
+        desired = int(request.POST["choice"]) if "choice" in request.POST else None
+        amount = int(request.POST["amount"]) if desired is None else None
+        occurrence = uuid.UUID(request.POST["occurrence"]) if request.POST.get("occurrence") else None
+        revision = int(request.POST["revision"]) if request.POST.get("revision") is not None else None
+        mutation = request.POST.get("mutation", "")
+        if desired is not None and (desired not in (-1, 0, 1) or occurrence is None):
+            raise ValueError()
+        if amount is not None and (amount < -2 or amount > 2 or amount == 0):
+            raise ValueError()
+        if revision is not None and revision < 0:
+            raise ValueError()
+        if mutation and not re.fullmatch(r"[A-Za-z0-9_-]{16,64}", mutation):
+            raise ValueError()
+    except (KeyError, ValueError, TypeError):
+        return HttpResponseBadRequest("Invalid vote request.")
+    try:
+        response, removed, should_skip = voting.apply_vote(
+            request, key, desired, amount, occurrence, revision, mutation,
+        )
+    except voting.VoteRejected as error:
+        return JsonResponse({"message": str(error), **error.state}, status=error.status)
+    if should_skip:
+        _skip(reason="downvote", expected_occurrence=uuid.UUID(response["occurrenceId"]))
     if removed is not None:
         if not removed.manually_requested:
             playback.handle_autoplay(removed.external_url or removed.title)
         else:
             playback.handle_autoplay()
-    audit_log.append(
-        "user_vote",
-        request=request,
-        target="current-song" if models.CurrentSong.objects.filter(queue_key=key).exists() else "queue",
-        song_key=key,
-        metadata={"amount": amount},
-    )
+    if "amount" in response:
+        audit_log.append(
+            "user_vote", request=request,
+            target="current-song" if models.CurrentSong.objects.filter(queue_key=key).exists() else "queue",
+            song_key=key, metadata={"amount": response["amount"]},
+        )
     musiq.update_state()
-    return HttpResponse()
+    return JsonResponse(response)
+
+
+def played_history(request: WSGIRequest) -> HttpResponse:
+    """Return one bounded page of public song metadata from the last 12 hours."""
+    from django.db.models import Q
+
+    rows = models.PlaybackHistory.objects.filter(ended_at__gte=timezone.now() - datetime.timedelta(hours=12))
+    cursor = request.GET.get("before", "")
+    if cursor:
+        try:
+            anchor = models.PlaybackHistory.objects.get(pk=int(cursor))
+            rows = rows.filter(Q(ended_at__lt=anchor.ended_at) | Q(ended_at=anchor.ended_at, id__lt=anchor.pk))
+        except (ValueError, models.PlaybackHistory.DoesNotExist):
+            return HttpResponseBadRequest("Invalid history page.")
+    page = list(rows[:21])
+    more = len(page) > 20
+    page = page[:20]
+    response = JsonResponse({"songs": [{
+        "id": row.id, "artist": row.artist, "title": row.title,
+        "externalUrl": row.external_url, "artworkUrl": row.artwork_url,
+        "duration": row.duration, "endedAt": row.ended_at.isoformat(),
+        "outcome": row.outcome,
+    } for row in page], "nextCursor": str(page[-1].id) if page and more else None})
+    response["Cache-Control"] = "no-store"
+    return response

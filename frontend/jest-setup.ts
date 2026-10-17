@@ -40,3 +40,9 @@ try {
     child.spawnSync('yarn', ['sass', 'scss/dark.scss', '../static/dark.css']);
   }
 }
+
+// jsdom does not provide media queries; browser animation paths use this API.
+Object.defineProperty(window, 'matchMedia', {writable: true, value: jest.fn().mockImplementation(query => ({
+  matches: false, media: query, addListener: () => {}, removeListener: () => {},
+  addEventListener: () => {}, removeEventListener: () => {},
+}))});

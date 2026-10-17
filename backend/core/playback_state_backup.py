@@ -10,6 +10,8 @@ import json
 import logging
 import os
 import pathlib
+import threading
+import uuid
 from typing import Any, Dict, Optional
 
 from django.conf import settings as conf
@@ -17,14 +19,16 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from core import models, redis
+from core import models, redis, queue_lock
 from core.settings import storage
 
 logger = logging.getLogger(__name__)
+_snapshot_lock = threading.RLock()
 
 STATE_FILE = pathlib.Path(conf.BASE_DIR) / "config" / "playback_state_backup.json"
 
 QUEUE_FIELDS = (
+    "occurrence_id",
     "index",
     "manually_requested",
     "votes",
@@ -41,6 +45,7 @@ QUEUE_FIELDS = (
 )
 
 CURRENT_FIELDS = (
+    "occurrence_id", "playback_outcome",
     "queue_key",
     "manually_requested",
     "votes",
@@ -74,7 +79,8 @@ def _string_to_datetime(value: Any):
 def _song_payload(song, fields) -> Dict[str, Any]:
     payload = {}
     for field in fields:
-        payload[field] = getattr(song, field)
+        value = getattr(song, field)
+        payload[field] = str(value) if isinstance(value, uuid.UUID) else value
     return payload
 
 
@@ -82,6 +88,7 @@ def _current_payload(song: models.CurrentSong) -> Dict[str, Any]:
     payload = _song_payload(song, CURRENT_FIELDS)
     payload["created"] = _datetime_to_string(song.created)
     payload["last_paused"] = _datetime_to_string(song.last_paused)
+    payload["playback_started_at"] = song.playback_started_at.isoformat() if song.playback_started_at else None
     return payload
 
 
@@ -99,21 +106,38 @@ def _atomic_write(payload: Dict[str, Any]) -> None:
 
 
 def snapshot() -> None:
-    """Write a small, atomic mirror of the current playback state."""
-
+    """Mirror a consistent queue and its vote ledger without holding DB locks during fsync."""
+    if transaction.get_connection().in_atomic_block:
+        transaction.on_commit(snapshot)
+        return
     try:
-        current_song: Optional[models.CurrentSong] = models.CurrentSong.objects.first()
-        queued_songs = list(models.QueuedSong.objects.order_by("index", "id"))
-
-        payload = {
-            "version": 1,
-            "saved_at": timezone.now().isoformat(),
-            "paused": bool(redis.get("paused")),
-            "current": _current_payload(current_song) if current_song else None,
-            "queue": [_song_payload(song, QUEUE_FIELDS) for song in queued_songs],
-        }
-
-        _atomic_write(payload)
+        # Serialize captures/writes so an older snapshot cannot replace a newer one.
+        with _snapshot_lock:
+            with transaction.atomic():
+                queue_lock.acquire()
+                current_song = models.CurrentSong.objects.first()
+                queued_songs = list(models.QueuedSong.objects.order_by("index", "id"))
+                active = [s.occurrence_id for s in queued_songs]
+                if current_song:
+                    active.append(current_song.occurrence_id)
+                payload = {
+                    "version": 2,
+                    "saved_at": timezone.now().isoformat(),
+                    "paused": bool(redis.get("paused")),
+                    "current": _current_payload(current_song) if current_song else None,
+                    "queue": [_song_payload(song, QUEUE_FIELDS) for song in queued_songs],
+                    "vote_states": [{"occurrence": str(v.pk), "engagement": v.engagement}
+                                    for v in models.SongVoteState.objects.filter(pk__in=active)],
+                    "votes": [{"occurrence": str(v.occurrence_id), "voter_key": v.voter_key,
+                               "choice": v.choice, "revision": v.revision,
+                               "changed_at": v.changed_at.isoformat() if v.changed_at else None,
+                               "activity_recorded": v.activity_recorded}
+                              for v in models.SongVote.objects.filter(occurrence_id__in=active)],
+                    "vote_mutations": [{"occurrence": str(v.occurrence_id), "voter_key": v.voter_key,
+                                         "mutation_id": v.mutation_id}
+                                        for v in models.VoteMutation.objects.filter(occurrence_id__in=active)],
+                }
+            _atomic_write(payload)
     except Exception as error:  # pylint: disable=broad-except
         logger.warning("failed to snapshot playback state: %s", error)
 
@@ -137,7 +161,7 @@ def _load_payload() -> Optional[Dict[str, Any]]:
 
         if not isinstance(payload, dict):
             return None
-        if int(payload.get("version", 0)) != 1:
+        if int(payload.get("version", 0)) not in (1, 2):
             return None
 
         return payload
@@ -146,8 +170,13 @@ def _load_payload() -> Optional[Dict[str, Any]]:
         return None
 
 
+def _occurrence(item):
+    return uuid.UUID(str(item["occurrence_id"])) if item.get("occurrence_id") else uuid.uuid4()
+
+
 def _create_queued_song(item: Dict[str, Any]) -> None:
     models.QueuedSong.objects.create(
+        occurrence_id=_occurrence(item),
         index=int(item.get("index") or 1),
         manually_requested=bool(item.get("manually_requested")),
         votes=int(item.get("votes") or 0),
@@ -173,6 +202,9 @@ def _create_queued_song(item: Dict[str, Any]) -> None:
 
 def _create_current_song(item: Dict[str, Any]) -> None:
     current_song = models.CurrentSong.objects.create(
+        occurrence_id=_occurrence(item),
+        playback_outcome=str(item.get("playback_outcome") or "completed"),
+        playback_started_at=_string_to_datetime(item["playback_started_at"]) if item.get("playback_started_at") else None,
         queue_key=int(item.get("queue_key") or -1),
         manually_requested=bool(item.get("manually_requested")),
         votes=int(item.get("votes") or 0),
@@ -214,6 +246,9 @@ def restore_if_database_empty() -> bool:
             return False
 
         with transaction.atomic():
+            queue_lock.acquire()
+            if models.CurrentSong.objects.exists() or models.QueuedSong.objects.exists():
+                return False
             for item in sorted(
                 queue_items,
                 key=lambda queue_item: int(queue_item.get("index") or 0),
@@ -222,6 +257,27 @@ def restore_if_database_empty() -> bool:
 
             if current_item:
                 _create_current_song(current_item)
+
+            active = set(models.QueuedSong.objects.values_list("occurrence_id", flat=True))
+            active.update(models.CurrentSong.objects.values_list("occurrence_id", flat=True))
+            for entry in payload.get("vote_states", []):
+                occurrence = uuid.UUID(entry["occurrence"])
+                if occurrence in active:
+                    models.SongVoteState.objects.update_or_create(pk=occurrence, defaults={"engagement": entry.get("engagement", {}), "retired_at": None})
+            for entry in payload.get("votes", []):
+                occurrence = uuid.UUID(entry["occurrence"])
+                if occurrence in active and entry.get("choice") in (-1, 0, 1):
+                    state, _ = models.SongVoteState.objects.get_or_create(pk=occurrence)
+                    models.SongVote.objects.update_or_create(occurrence=state, voter_key=entry["voter_key"], defaults={
+                        "choice": entry["choice"], "revision": int(entry.get("revision", 0)),
+                        "changed_at": _string_to_datetime(entry["changed_at"]) if entry.get("changed_at") else None,
+                        "activity_recorded": bool(entry.get("activity_recorded")),
+                    })
+            for entry in payload.get("vote_mutations", []):
+                occurrence = uuid.UUID(entry["occurrence"])
+                if occurrence in active:
+                    state, _ = models.SongVoteState.objects.get_or_create(pk=occurrence)
+                    models.VoteMutation.objects.get_or_create(occurrence=state, voter_key=entry["voter_key"], mutation_id=entry["mutation_id"])
 
         if "paused" in payload:
             storage.put("paused", bool(payload.get("paused")))

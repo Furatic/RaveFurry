@@ -173,6 +173,14 @@ DATABASES = {
     }
 }
 
+# Local Windows installs use password/trust authentication, not Kerberos.
+# Avoid consulting the MIT credential-cache service on every connection.
+# Keep Linux, remote databases, and explicit libpq preferences unchanged.
+if os.name == "nt" and POSTGRES_HOST.lower() in {"127.0.0.1", "localhost", "::1"}:
+    DATABASES["default"]["OPTIONS"] = {
+        "gssencmode": os.environ.get("PGGSSENCMODE") or "disable",
+    }
+
 BROKER_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}"
 CELERY_IMPORTS = [
     "core.lights.worker",
@@ -562,3 +570,4 @@ if TESTING:
     SONGS_CACHE_DIR = TEST_CACHE_DIR
 
 pathlib.Path(SONGS_CACHE_DIR).mkdir(parents=True, exist_ok=True)
+

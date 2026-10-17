@@ -31,6 +31,7 @@ defaults = {
     "playing": False,
     "paused": False,
     "playback_error": False,
+    "playback_worker_failed": False,
     "stop_playback_loop": False,
     "web_restart_requested": "",
     "alarm_playing": False,
@@ -141,22 +142,34 @@ class Event:
 
     def __init__(self, name: str) -> None:
         self.name = name
-        self.is_set = False
+        self.state_key = f"event:{self.name}:set"
         self.lock = connection.lock(f"{self.name}_lock")
+
+    @property
+    def is_set(self) -> bool:
+        """Read the shared latch, including signals from another process."""
+        return bool(connection.exists(self.state_key))
 
     def wait(self) -> None:
         """Blocks until the event is set."""
         try:
             with self.lock:
-                is_set = self.is_set
-
-            if is_set:
-                return
+                if self.is_set:
+                    return
 
             pubsub = blocking_connection.pubsub(ignore_subscribe_messages=True)
             try:
                 pubsub.subscribe(self.name)
-                next(pubsub.listen())
+                while True:
+                    # Pub/sub alone can lose a signal between the initial
+                    # check and subscribing (or while reconnecting). The shared
+                    # latch keeps that signal until clear(), across processes.
+                    with self.lock:
+                        if self.is_set:
+                            return
+                    message = pubsub.get_message(timeout=1.0)
+                    if message is not None and message["type"] == "message":
+                        return
             finally:
                 pubsub.close()
         except RedisError as error:
@@ -165,10 +178,11 @@ class Event:
     def set(self) -> None:
         """Set the event and wake up all waiting threads."""
         with self.lock:
-            self.is_set = True
+            connection.set(self.state_key, "1")
             connection.publish(self.name, "")
 
     def clear(self) -> None:
         """Clear this Event, allowing threads to wait for it."""
         with self.lock:
-            self.is_set = False
+            connection.delete(self.state_key)
+

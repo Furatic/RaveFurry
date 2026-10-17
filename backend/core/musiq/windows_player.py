@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import logging
 import re
 import time
 from pathlib import Path
@@ -42,6 +43,23 @@ except ImportError:
 
 
 _INSTANCE: Optional["WindowsPlayer"] = None
+logger = logging.getLogger(__name__)
+
+
+def recovery_would_interrupt_playback() -> bool:
+    """Defer recovery while the existing native player can still produce audio.
+
+    Called only when runtime health has failed, not during normal health polls.
+    Do not create another player while inspecting the existing one.
+    """
+    if _INSTANCE is None:
+        return False
+    try:
+        state = _INSTANCE.media_player.get_state()
+    except Exception:  # pylint: disable=broad-except
+        logger.exception("cannot inspect VLC state; deferring web recovery")
+        return True
+    return state in (vlc.State.Opening, vlc.State.Buffering, vlc.State.Playing)
 
 
 def _get_instance() -> "WindowsPlayer":
@@ -86,12 +104,20 @@ class WindowsPlayer(player.Player):
         self.media_player = self.instance.media_player_new()
         self._last_state_check = 0.0
         self._last_stop_waiting = False
+        self._song_playback_observed = False
         _INSTANCE = self
 
     def _set_media(self, uri: str) -> None:
         uri = _normalize_media_source(uri)
         media = self.instance.media_new(uri)
-        self.media_player.set_media(media)
+        if media is None:
+            raise PlaybackError("VLC failed to create media")
+        try:
+            self.media_player.set_media(media)
+        finally:
+            # set_media retains its own reference. Release the caller's
+            # reference even if assigning the media fails.
+            media.release()
 
     def start_song(self, song, catch_up: Optional[float]) -> None:
         uri = song.internal_url or song.stream_url or song.external_url
@@ -100,6 +126,7 @@ class WindowsPlayer(player.Player):
 
         self._last_state_check = 0.0
         self._last_stop_waiting = False
+        self._song_playback_observed = False
 
         try:
             self.media_player.stop()
@@ -118,12 +145,17 @@ class WindowsPlayer(player.Player):
 
         self.media_player.audio_set_volume(round(max(0.0, min(1.0, volume)) * 100))
 
+        # A recovered paused song needs VLC to open/seek the media. Keep that
+        # preparation silent, including the interval before pause takes effect.
+        self.media_player.audio_set_mute(bool(redis.get("paused")))
+
         if self.media_player.play() == -1:
             raise PlaybackError("VLC failed to start playback")
 
         # give VLC a moment to start
         for _ in range(20):
             state = self.media_player.get_state()
+            self._song_playback_observed |= state in (vlc.State.Playing, vlc.State.Ended)
             if state not in (vlc.State.NothingSpecial, vlc.State.Opening):
                 break
             time.sleep(0.1)
@@ -132,13 +164,19 @@ class WindowsPlayer(player.Player):
             self.media_player.set_time(int(catch_up))
 
         if redis.get("paused"):
-            self.media_player.pause()
+            self.media_player.audio_set_mute(True)
+            self.media_player.set_pause(1)
+        else:
+            self.media_player.audio_set_mute(False)
+
+    def has_started_playback(self) -> bool:
+        """Cached evidence from existing polls; this never calls VLC."""
+        return self._song_playback_observed
 
     def should_stop_waiting(self, previous_error: bool) -> bool:
-        # The playback loop calls this every 0.1s. On Windows, repeatedly
-        # crossing into libVLC for get_state() can accumulate Thread handles
-        # over long events. Raveberry already has duration-based end detection,
-        # so VLC only needs to be polled occasionally as a health/early-stop check.
+        # The playback loop calls this every 0.1s. Duration-based end detection
+        # already handles normal completion, so throttle native state polling
+        # while retaining checks for early stops and playback errors.
         now = time.monotonic()
         interval = 1.0 if previous_error else 5.0
 
@@ -147,6 +185,7 @@ class WindowsPlayer(player.Player):
 
         self._last_state_check = now
         state = self.media_player.get_state()
+        self._song_playback_observed |= state in (vlc.State.Playing, vlc.State.Ended)
         self._last_stop_waiting = state in (
             vlc.State.Ended,
             vlc.State.Stopped,
@@ -158,6 +197,7 @@ class WindowsPlayer(player.Player):
         if interrupt:
             self.media_player.stop()
         self._set_media(Path(alarm_path).resolve().as_uri())
+        self.media_player.audio_set_mute(False)
         if self.media_player.play() == -1:
             raise PlaybackError("VLC failed to play alarm")
 
@@ -169,6 +209,7 @@ class WindowsPlayer(player.Player):
     def restart() -> None:
         inst = _get_instance()
         inst.media_player.set_time(0)
+        inst.media_player.audio_set_mute(False)
         inst.media_player.play()
 
     @staticmethod
@@ -179,7 +220,9 @@ class WindowsPlayer(player.Player):
 
     @staticmethod
     def play() -> None:
-        _get_instance().media_player.play()
+        inst = _get_instance()
+        inst.media_player.audio_set_mute(False)
+        inst.media_player.play()
 
     @staticmethod
     def pause() -> None:
@@ -226,3 +269,4 @@ def skip() -> None:
 
 def set_volume(volume) -> None:
     WindowsPlayer.set_volume(volume)
+

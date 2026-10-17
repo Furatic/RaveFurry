@@ -1,110 +1,279 @@
-### This is our heavily modified fork of [Raveberry](https://github.com/raveberry/raveberry). 
-### Made to help operate our FURATIC [Pass the Aux](https://vrchat.com/home/group/grp_abb22096-1394-451f-bb13-0e4f9d63b9fb) events.
-### Ravefurry is currently in active development and will have many improvements added over time.
+<div align="center">
 
-<img src="/UIdemo.gif" alt="New UI" width="420">
+<img src="FuraticLogoWide.png" alt="FURATIC" width="500">
 
-Ravefurry keeps core ideas that made Raveberry useful:
+# RaveFurry
 
-- a shared music queue
-- browser based song requests
-- democratic ordering and voting
-- a self hosted system that can be customized and extended
+<img src="https://img.shields.io/badge/HOST-WINDOWS_11-78B5FF?style=for-the-badge&labelColor=141322" alt="Host: Windows 11">
+<img src="https://img.shields.io/badge/DATABASE-POSTGRESQL-B79AF8?style=for-the-badge&labelColor=141322" alt="Database: PostgreSQL">
+<img src="https://img.shields.io/badge/PLAYBACK-VLC-F4B77A?style=for-the-badge&labelColor=141322" alt="Playback: VLC">
+<a href="LICENSE"><img src="https://img.shields.io/badge/LICENSE-LGPL_3.0-8AD9BE?style=for-the-badge&labelColor=141322" alt="License: LGPL 3.0"></a>
 
-We kept a substantial amount of the original codebase intact, then modified and expanded it with an upgraded UI, better operational control, better reliability, and support for our environment.
+<br><br>
 
-## Why this fork exists
+[The event](#one-event-three-states) ·
+[Moderation](#moderation-while-the-music-keeps-playing) ·
+[UI and frontend](#an-interface-for-the-event) ·
+[Architecture](#how-our-windows-setup-is-connected) ·
+[Recovery](#when-something-stops-responding) ·
+[Raveberry roots](#what-we-inherited-and-what-we-changed)
 
-Upstream Raveberry was originally built around a Raspberry Pi oriented deployment model and its own default operating assumptions. That was a great base, but it was not the exact thing we needed.
+</div>
 
-Ravefurry exists because we needed a version that better matched our use case, including:
+RaveFurry runs our [FURATIC Pass the Aux events](https://vrchat.com/home/group/grp_abb22096-1394-451f-bb13-0e4f9d63b9fb). People can request songs from their browser, vote on the main queue, and watch the event stream in our event world or on the site. Moderators keep the queue managed, review songs that need attention, and bring the event to a close.
 
-- Windows friendly deployment and operation
-- stronger moderation tools
-- more control over how the public site behaves during events
-- better handling of abusive or unwanted traffic
-- more reliability around music fetching and queue operations
-- a more customized UI and operator workflow
+It started with [Raveberry](https://github.com/raveberry/raveberry), and a substantial amount of that foundation is still here. We have since built a different public interface, a dedicated moderation workflow, a fairer way to handle additional requests, and a Windows runtime with persistent queue state and automatic recovery.
 
-<img src="/modUIdemo.png" alt="New UI" width="720">
+The current setup runs on a Windows 11 machine, a 2013 Mac Pro. The website reaches the public through a VPS and a Newt tunnel. OBS sends its video through a separate stream server. That is the deployment this README describes, and the reason behind many of the choices in this fork.
 
-## What changed from upstream
+<p align="center">
+  <img src="event-desktop-stream.gif" alt="The current event page with its song queue and video player open" width="1050">
+</p>
 
-### 1. Platform and deployment changes
+## One event, three states
 
-Ravefurry has been adapted well beyond the original Raspberry Pi centric setup.
+The site follows the event instead of presenting the same page all the time.
 
-This repository includes custom Windows install/start scripts and a Windows oriented bootstrap flow for dependencies, frontend assets, and local services.
+| State | What happens |
+| :--- | :--- |
+| **Event** | Song requests are open. The main queue plays, people vote, and extra requests wait in the pre-queue. |
+| **Closing time** | New requests stop and the pre-queue is cleared. The song already playing and the remaining main queue continue. |
+| **After hours** | The public page becomes an event wrap-up, with top songs and recent listening history. |
 
-### 2. PostgreSQL backed runtime
+Closing time disables the paths that would otherwise allow people to keep adding music, and switches to after hours once the current song has finished and the main queue is empty.
 
-We moved this fork toward a PostgreSQL backed runtime because our use case needed stronger behavior under simultaneous activity and a more robust database setup.
+After hours keeps the event visible after the music stops. **Top songs** ranks up to 20 distinct songs by the votes recorded on their plays during the last event. **Song history** is a separate view: up to 50 recent songs, newest first.
 
-### 3. Event mode and after hours mode
+## Requests, votes, and a fair turn
 
-Ravefurry adds explicit site mode behavior so the public experience can change depending on whether an event is live or not.
+The main queue and the pre-queue have different jobs. A person's first active request gets their place in the main queue. Additional requests go into the pre-queue, with a limit of five active songs per person, including any song currently playing. Those extra songs become eligible for promotion into the main queue when that person's existing current song has finished playing.
 
-Instead of treating the site as a single always on public mode, this fork supports:
+A pre-queue song cannot be voted into playback before it has earned a main-queue place. The main queue then uses votes to order eligible songs. The next song in line after the currently playing song gets locked in place so other songs can't cut in front of it.
 
-- **Event mode**
-- **After hours mode**
+Requests also pass through cooldown, replay, duration, and duplicate checks. A request must finish downloading and pass our automated requirements before it can play. Voting can move songs through the main queue so they play sooner, and a total of -2 downvotes can remove a queued song or skip the current one.
 
-That allows us to control access and behavior in a way that better fits how we actually run it.
+## Moderation during the event
 
-### 4. A much stronger moderation system
+<p align="center">
+  <img src="modUIdemo.png" alt="RaveFurry moderation dashboard" width="1050">
+</p>
 
-This fork adds a substantially expanded moderation workflow compared with upstream.
+The moderation panel brings the current song, queue, review decisions, event controls, and recent activity into one place. A moderator can approve or deny a held song, remove a request, skip any song, or begin closing time without moving through unrelated settings pages.
 
-The moderator tooling in Ravefurry is built around active operational control, including things like:
+The review pipeline can check available lyrics against our event rules to hold a song for a human decision. A song marked as analyzing or awaiting review cannot become playable until it passes automated or manual review.
 
-- viewing the current song and queue in a moderator focused dashboard
-- removing queued songs
-- skipping the current song
-- switching site mode
-- seeing recent moderation and user activity
-- managing allowed or disallowed IPs directly
+There are separate permissions for song moderation and broader moderation controls, with account management reserved for administrators. The backend checks those permissions on the actions themselves. The dashboard also provides IP bans, whitelists, blocklist management, and a searchable activity trail for analyzing a request or moderation decision.
 
-Moderation is one of the areas where this fork has expanded the most.
+If the backend is restarting for any reason, the dashboard reconnects and refreshes its data **without reloading the document**, preserving the browser's audio permission and the enabled alert state for moderator notifications. An expired login is handled separately.
 
-### 5. IP screening, VPN/datacenter blocking, and blocklists
+## An interface for the event
 
-Ravefurry adds traffic screening features that are not part of stock upstream behavior.
+The public page is built around the queue, readable song cards, a responsive pre-queue, and a video player. The layout changes with the available screen space, and expanding panels and page entrances share the same visual design.
 
-This includes support for:
+<p align="center">
+  <img src="event-responsive-layout.gif" alt="The event interface adapting to different browser sizes" width="900">
+</p>
 
-- blocking known bad or unwanted IPs
-- whitelisting trusted IPs
-- screening traffic for VPN/proxy/datacenter usage
-- maintaining local IPv4 blocklists
-- importing blocklists from either uploaded text files or raw text URLs
-- managing those blocklists from the moderator UI
+Opening the video player starts the media stream. The page does not begin fetching the stream just because someone opened the queue. If playback fails, the player tries multiple reconnect attempts.
 
-That gives operators much more control over who can interact with the system and under what conditions.
+<details>
+<summary><strong>Page entrances on desktop and mobile</strong></summary>
 
-### 6. YouTube/provider reliability improvements
+<br>
 
-We also changed parts of the music-fetching pipeline to behave more reliably in our environment.
+<table>
+  <tr>
+    <th>Desktop</th>
+    <th>Mobile</th>
+  </tr>
+  <tr>
+    <td valign="top"><img src="event-desktop-entrance.gif" alt="Desktop event page entrance animation" width="640"></td>
+    <td valign="top"><img src="event-mobile-entrance.gif" alt="Mobile event page entrance animation" width="200"></td>
+  </tr>
+</table>
 
-This includes improvements around:
+</details>
 
-- yt-dlp request handling
-- retry/timeout behavior
-- safer handling of failed background fetches
+## How our Windows setup is connected
 
-### 7. UI and workflow customization
+```mermaid
+flowchart TB
+    host["Windows 11 event host · Django and Waitress"]
+    newt["Newt tunnel connector"]
+    data["Local PostgreSQL and Redis"]
+    player["VLC playback"]
+    website["Website VPS and reverse proxy"]
+    obs["OBS and audio visualizer"]
+    relay["Separate video stream server"]
+    visitors["Website visitors"]
+    viewers["Video viewers"]
 
-The UI in this fork has been customized significantly from upstream.
+    host <--> newt
+    host <--> data
+    host --> player
+    newt <--> website
+    website <--> visitors
+    player --> obs
+    obs --> relay
+    relay --> viewers
 
-That includes both public-facing behavior and operator-facing behavior. The goal was not to throw away the original foundation, but to make the experience better suited to how we actually use the software.
+    classDef eventHost fill:#2b2140,stroke:#b79af8,color:#ffffff,stroke-width:2px
+    classDef service fill:#172337,stroke:#78b5ff,color:#ffffff
+    classDef audience fill:#15332e,stroke:#8ad9be,color:#ffffff
+    class host eventHost
+    class newt,data,player,website,obs,relay service
+    class visitors,viewers audience
+```
 
-## Status
+In our deployment, the host sits on a closed network. [Newt](https://github.com/fosrl/newt) makes the outbound tunnel connection for the web resource; the public website VPS proxies traffic through it. The Windows web server listens on loopback, and the tunnel exposes that web service rather than opening general access to the machine. PostgreSQL, Redis, and playback stay local.
 
-Ravefurry is an actively customized fork and will continue to evolve over time as we keep improving it for our use case.
+OBS has its own delivery path through a different server. More people watching the video means more distribution traffic at that stream server, rather than a separate encode or direct stream from the event PC for every viewer. Website requests and video distribution therefore have different resource demands.
+
+The Windows launcher manages the application and local service lifecycle. Waitress handles HTTP requests, and VLC plays cached local audio through the Windows playback path. The Pi-oriented Mopidy setup from upstream is not the playback path used here.
+
+## How the frontend stays in sync
+
+### Pages have their own boundaries
+
+The custom pages keep their markup, styling, and page-specific JavaScript together. That makes the event page, the after-hours page, and the moderation panel separate places to work on, matching the different jobs they do.
+
+| Frontend file | Its job |
+| :--- | :--- |
+| [`landing.html`](backend/templates/landing.html) | The main event shell, video player, and public notifications. It embeds the queue interface. |
+| [`musiq_embed.html`](backend/templates/musiq_embed.html) | The queue markup and its page-specific presentation, working with the compiled TypeScript frontend. |
+| [`moderator.html`](backend/templates/moderator.html) | The moderation dashboard, its controls, and its browser-side refresh and reconnect behavior. |
+| [`landing_afterhours.html`](backend/templates/landing_afterhours.html) | The after-hours presentation, top-song list, and expanding listening history. |
+
+Permission checks, queue changes, ranking queries, and playback decisions happen in Python on the server. The inherited [`frontend/ts`](frontend/ts) code also remains in use and has been expanded for queue updates, voting, panels, and browser state. The frontend build compiles that code into the bundle used by the queue interface.
+
+This is a page-oriented frontend over a shared backend. We keep the custom page behavior in the page it belongs to, while retaining the TypeScript machinery that already serves the queue.
+
+### Fast feedback, confirmed state
+
+For a vote, it first needs the server's personal-vote state for that song occurrence. It can then show the button press and provisional count immediately, marks the operation as pending, and sends the desired choice with the occurrence ID, vote revision, and a unique mutation ID.
+
+The backend checks the song, ownership, voting mode, cooldowns, and current state before committing the change. Its response supplies the confirmed choice and total.
+
+A timed-out POST is handled as an uncertain result. The server may already have committed it, so the client re-reads the state instead of blindly submitting the same action again. The database also recognizes repeated mutation IDs. This is what keeps a lost response or a second tab from quietly turning one intended vote into multiple.
+
+### The server orders the queue
+
+The browser renders the order supplied by the backend. The backend uses the same effective ordering for its public queue and playback selection, with eligibility checks keeping songs held for manual review, dowloading, and pre-queue songs out of playback.
+
+Positive vote totals determine priority in the main queue. Scores below one share an ordering floor of one. That floor affects sorting, not the displayed score or the separate downvote-removal threshold. With voting disabled, the queue index supplies the ordinary order.
+
+Pre-queue ordering is separate from vote ranking: it is a stable rotation across requesters, with older extras promoted when they become eligible. Queue changes run under backend coordination. Even a completed download must recheck that its request still exists, so slow downloads cannot resurrect a song that was just removed.
+
+### Animation follows real changes
+
+Song cards are keyed by their playback occurrence. A refresh updates and moves existing nodes, creating or removing only the rows that changed. The list measures card positions before and after a confirmed update and animates the distance between them.
+
+The handoff from the queue into the current-song card has its own shared-element transition. Pre-queue expansion measures the surface and moves its labels while crossfading the compact artwork preview into the full list.
+
+Backend state remains the source for song approval, committed votes, and playback progress.
+
+## State that lasts, and state that can be rebuilt
+
+| State | Where it belongs |
+| :--- | :--- |
+| Current song, queued requests, votes, ownership, and listening history | PostgreSQL |
+| Fast coordination, notifications, and temporary presentation state | Redis |
+| Runtime settings and an additional queue/playback recovery snapshot | Local persisted files |
+| Open panels, pending visual feedback, and enabled moderation notifications | The current browser page |
+
+Redis helps coordinate live work, but it is not the sole copy of the queue or votes. A stable browser identity lets the server associate requests with the same browser across application restarts. Moderator login sessions are also retained across normal restarts; startup does not needlessly reset unchanged account passwords or invalidate sessions.
+
+Replaying the same song later creates a new occurrence. A database uniqueness constraint keeps one vote record per voter and occurrence, with revisions protecting changes to that record. The occurrence follows the song from the queue into current playback, so the handoff does not create a fresh opportunity to vote again.
+
+Queue mutations and playback handoffs use database transactions and coordinated locking. The critical state changes are serialized, and queue rows are locked in a consistent order. Recovery snapshots are written after releasing the queue's database lock, with a separate lock to prevent an older snapshot from overwriting a newer one.
+
+The snapshot is an extra recovery path for the current song, queue, and voting state. It is restored when the live queue and current-song state are empty, rather than replacing a healthy queue on every start. Writes use a temporary file, flush to disk, and atomic replacement.
+
+Listening history only includes songs whose playback actually started. Final vote totals are copied into history before the live occurrence is removed. That gives after-hours results their own durable record.
+
+## Access controls
+
+Django authentication, server-side role checks, and CSRF checks on the browser's state-changing actions protect the moderation workflow. Public request and vote endpoints enforce their own queue rules on the server rather than trusting just the frontend. Browser identity cookies use random tokens, with their hashes stored server-side.
+
+IP screening combines normalized client addresses, local blocklists, explicit bans and whitelists, and detection for VPN, proxy, or datacenter traffic. Screening results are cached, with lookup budgets and deferred retries, so an ordinary page refresh does not become a fresh IP lookup. Moderators can inspect and adjust those decisions from the dashboard.
+
+The local OBS visualizer checks local connection addresses, Host, and Origin values, and limits its local WebSocket clients. Public visitors receive the website's shared visualizer feed on a separate path, they do not get direct access to that local service.
+
+## When something stops responding
+
+Recovery is built at several levels because a failed download, an unavailable database, and a disconnected browser need different responses.
+
+| Situation | What the software does |
+| :--- | :--- |
+| **Moderator page loses the backend** | Shows a reconnecting notice, reconnects, and refreshes server data in place. The existing page and alert notifications audio resume once the connection is restored. |
+| **Application process exits or repeatedly fails health checks** | The Windows supervisor restarts the managed process. Health checks defer recovery while the audio player reports active media is still playing, to avoid an unnecessary interruption. |
+| **Local PostgreSQL becomes unavailable** | The supervisor attempts to bring it back and waits for database readiness before starting the application again. |
+| **Playback is restored after a restart** | Persisted state rebuilds the current song and queue. |
+| **Visualizer companion stops responding** | Its supervisor checks health, restarts its own child process, and backs off between repeated failures. Ordinary silence is treated differently from a stalled audio capture. |
+| **A Windows file is briefly locked** | File updates use bounded retries and atomic replacement where appropriate, including the files read by OBS. |
+
+The application also supports scheduled maintenance restarts between songs, the current default interval is 20 completed tracks. The restart request is coordinated with playback rather than triggered in the middle of a song.
+
+The web application and VLC playback share a managed application process. If that process really has to be replaced, playback can pause while it recovers. The purpose of the persisted state and handoff logic is to get the event resumed without throwing away its queue, song ownership, or votes.
+
+## Processing efficiency
+
+Our current events have seen roughly 30 simultaneous website users. Around 80 is the scale we are designing toward, with enough capacity on the host machine and the two VPS delivery paths for network traffic.
+
+There is one event player and one audio-analysis pipeline. Each browser renders its own visual background from shared data. OBS renders its broadcast view separately.
+
+The main queue refreshes on a two-second HTTP polling cycle, pauses that polling in hidden tabs, and prevents overlapping state requests. This replaces upstream's queue-state WebSocket updates.
+
+The Windows HTTP server has 160 request threads, while database work from HTTP requests is gated to 80 concurrent request slots to leave room for playback and recovery. Those are concurrency limits, not a visitor limit or a benchmark of how many visitors this can handle. Request and background-task cleanup close database connections, and the normal Windows background executor reuses a worker pool instead of starting a new thread for every submitted job.
+
+The visualizer also bounds its own work. Audio capture drops old blocks if processing falls behind. Browser rendering reuses buffers and skips a frame when the previous GPU work is still outstanding rather than building a backlog. The public background uses a capped rendering resolution, while OBS has its own more detailed design. More visitors still mean more traffic, but the audio processing remains shared.
+
+## What we inherited, and what we changed
+
+Raveberry gave this project much more than a starting point. The Django application, PostgreSQL support, Redis integration, provider structure, TypeScript frontend, request/vote model, and a large amount of supporting code came from upstream.
+
+| Raveberry foundation | Where RaveFurry has taken it |
+| :--- | :--- |
+| A shared, vote-ordered music server | An event workflow with a main queue, fair pre-queue rotation, explicit closing time, and after-hours results. |
+| General public and administrative interfaces | Custom event, after-hours, and moderation pages, with review decisions and live operational controls. |
+| Django, PostgreSQL, and Redis | Persistent vote occurrences and ownership, coordinated queue changes, additional recovery snapshots, and a supervised Windows runtime. |
+| A TypeScript queue frontend and WebSocket state updates | Expanded queue and vote handling, page-specific HTML/CSS/JavaScript, and HTTP polling for regular queue state. |
+| Raspberry Pi/Linux deployment and Mopidy integrations | The current Windows/Waitress/VLC path, OBS exports, and a separate supervised audio visualizer. |
+
+There are still files for integrations and deployment paths we do not use at our events. Spotify, SoundCloud, other providers, and several Pi-oriented features remain part of the inherited tree, but the current event flow is focused on YouTube requests, downloaded local audio, and VLC playback.
+
+The `raveberry` package names and many original directories remain, too. This is an extensively modified fork with its own event behavior and interface, built on an upstream codebase we continue to credit.
+
+<details>
+<summary><strong>Where the main systems live</strong></summary>
+
+| Area | Source |
+| :--- | :--- |
+| Windows launcher and supervision | [`bin/raveberry`](bin/raveberry) |
+| Event transitions | [`backend/core/site_mode.py`](backend/core/site_mode.py) |
+| Queue and playback | [`backend/core/musiq`](backend/core/musiq) |
+| Vote persistence | [`backend/core/voting.py`](backend/core/voting.py), [`backend/core/models.py`](backend/core/models.py) |
+| Browser vote confirmation | [`buttons-voting.ts`](frontend/ts/musiq/buttons-voting.ts), [`vote-state.ts`](frontend/ts/musiq/vote-state.ts) |
+| Queue reconciliation and drawer animation | [`update.ts`](frontend/ts/musiq/update.ts), [`panels.ts`](frontend/ts/musiq/panels.ts) |
+| Queue coordination and snapshots | [`queue_lock.py`](backend/core/queue_lock.py), [`playback_state_backup.py`](backend/core/playback_state_backup.py) |
+| Moderation and activity | [`moderation.py`](backend/core/moderation.py), [`audit_log.py`](backend/core/audit_log.py) |
+| Request screening | [`middleware.py`](backend/core/middleware.py), [`ip_screening.py`](backend/core/ip_screening.py) |
+| Playback history | [`played_history.py`](backend/core/played_history.py) |
+| OBS and visualizer | [`obs_export.py`](backend/core/obs_export.py), [`backend/visualizer`](backend/visualizer) |
+| Custom pages and queue frontend | [`backend/templates`](backend/templates), [`frontend/ts`](frontend/ts) |
+
+</details>
+
+## Credits and original documentation
+
+RaveFurry is developed by [Furatic](https://github.com/Furatic/RaveFurry) for our Pass the Aux events. Thank you to **the Raveberry contributors** for the software this fork grew from. The original authorship record remains in [`AUTHORS`](AUTHORS), and the repository retains its [GNU LGPL v3 license](LICENSE).
+
+The original Raveberry README is preserved below. Its installation instructions, integrations, and screenshots describe upstream Raveberry and are kept here as part of the project's history. Current upstream development lives at [raveberry/raveberry](https://github.com/raveberry/raveberry).
+
+<details>
+<summary><strong>Original Raveberry README</strong></summary>
 
 
-
-
-## Below is the Raveberry README before we made our own changes:
 
 [![Build Status](https://img.shields.io/github/actions/workflow/status/raveberry/raveberry/publish.yml)](https://github.com/raveberry/raveberry/actions/workflows/publish.yml)
 [![PyPI](https://img.shields.io/pypi/v/raveberry)](https://pypi.org/project/raveberry/)
@@ -365,3 +534,6 @@ Don't hesitate to mail me for feedback or open an issue if you experience any pr
 
 If you like this project, you can support me here:  
 [![](https://www.paypalobjects.com/en_US/i/btn/btn_donate_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=ZUPUUHFQMZNQQ)
+
+
+</details>

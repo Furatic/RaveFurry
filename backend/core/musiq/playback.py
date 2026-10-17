@@ -16,7 +16,7 @@ from django.db import connection, transaction
 from django.db.models import Case, F, IntegerField, Value, When
 from django.utils import timezone
 
-from core import models, obs_export, redis, user_manager, playback_state_backup
+from core import models, obs_export, redis, user_manager, playback_state_backup, site_mode
 from core.lights import controller as lights_controller
 from core.musiq import audio_tail, musiq, next_up, player
 from core.settings import storage
@@ -31,7 +31,7 @@ buzzer_stopped = redis.Event("buzzer_stopped")
 queue = models.QueuedSong.objects
 
 def _ordered_confirmed_queue():
-    confirmed = queue.confirmed().filter(review_status__in=["clear", "approved"]).annotate(queue_rank=Case(When(priority_tier="extra", then=Value(1)), default=Value(0), output_field=IntegerField()))
+    confirmed = queue.playable().annotate(queue_rank=Case(When(priority_tier="extra", then=Value(1)), default=Value(0), output_field=IntegerField()))
     voting_enabled = storage.get("interactivity") in [
         storage.Interactivity.upvotes_only,
         storage.Interactivity.full_voting,
@@ -104,7 +104,9 @@ def start() -> None:
     redis.put("backup_playing", False)
     redis.put("operator_command", "")
     redis.put("stop_playback_loop", False)
+    redis.put("playback_worker_failed", False)
 
+    obs_export.start()
     _handle_buzzer.delay()
     _loop.delay()
 
@@ -171,6 +173,8 @@ class Playback:
             return command
 
         if command == "resume_from_afterhours":
+            if site_mode.is_afterhours():
+                return command  # Closing may already have drained before this command arrived.
             if models.CurrentSong.objects.exists() and redis.get("paused"):
                 musiq.controller._resume()
                 musiq.update_state()
@@ -186,9 +190,17 @@ class Playback:
             except Exception:  # pylint: disable=broad-except
                 pass
 
-            models.CurrentSong.objects.all().delete()
-            user_manager.clear_queue_slots()
-            queue.all().delete()
+            from core import queue_lock, played_history, voting
+            with transaction.atomic():
+                queue_lock.acquire()
+                for current in models.CurrentSong.objects.all():
+                    played_history.record_finished(current, outcome="cleared")
+                    voting.retire(current.occurrence_id)
+                for occurrence in queue.values_list("occurrence_id", flat=True):
+                    voting.retire(occurrence)
+                models.CurrentSong.objects.all().delete()
+                user_manager.clear_queue_slots()
+                queue.all().delete()
 
             storage.put("paused", False)
             redis.put("paused", False)
@@ -200,6 +212,27 @@ class Playback:
             return command
 
         return ""
+
+    def _finish_closing_if_drained(self) -> bool:
+        """Enter after-hours only after the last main-queue occurrence is gone."""
+        if not site_mode.is_closing():
+            return False
+        from core import audit_log, queue_lock
+        with transaction.atomic():
+            queue_lock.acquire()
+            # Recheck under the same lock used by submissions and moderator mode changes.
+            if (not site_mode.is_closing() or models.CurrentSong.objects.exists()
+                    or queue.filter(priority_tier="normal").exists()):
+                return False
+            storage.put("paused", True)
+            redis.put("paused", True)
+            redis.put("playing", False)
+            redis.put("backup_playing", False)
+            site_mode.set_mode(site_mode.AFTER_HOURS_MODE)
+        audit_log.append("closing_queue_finished", target=site_mode.AFTER_HOURS_MODE)
+        musiq.update_state()
+        playback_state_backup.snapshot()
+        return True
     
     def play_alarm(self, interrupt=False, from_buzzer=True) -> None:
         """Play the alarm sound. If specified, interrupts the currently playing song."""
@@ -246,6 +279,8 @@ class Playback:
             # recover interrupted song from database
             return models.CurrentSong.objects.get(), True
 
+        self._finish_closing_if_drained()
+
         if queue.count() == 0:
             queue_changed.wait()
             queue_changed.clear()
@@ -254,60 +289,53 @@ class Playback:
             # in case of a false wakeup this causes as to wait again
             return None, False
 
-        # select the next song depending on settings
-        song: Optional[models.QueuedSong]
-        if storage.get("interactivity") in [
-            storage.Interactivity.upvotes_only,
-            storage.Interactivity.full_voting,
-        ]:
-            with transaction.atomic():
+        # Handoff and voting share a short DB lock. No promotion or file/native
+        # work runs while a primary song is moving from queued to current.
+        from core import queue_lock
+        with transaction.atomic():
+            queue_lock.acquire()
+            existing = models.CurrentSong.objects.first()
+            if existing is not None:
+                return existing, True
+            song = None
+            song_id = -1
+            if storage.get("interactivity") in [
+                storage.Interactivity.upvotes_only,
+                storage.Interactivity.full_voting,
+            ]:
                 song = _ordered_confirmed_queue().first()
-                if song is None:
-                    queue_changed.wait()
-                    queue_changed.clear()
-                    return None, False
-                song_id = song.id
-                queue.remove(song.id, snapshot=False)
-        elif storage.get("shuffle"):
-            confirmed = queue.confirmed()
-            index = random.randint(0, confirmed.count() - 1)
-            song_id = confirmed[index].id
-            song = queue.remove(song_id, snapshot=False)
-        else:
-            # move the first song in the queue into the current song
-            song_id, song = queue.dequeue()
-
+                if song is not None:
+                    song_id = song.id
+                    song = queue.remove(song_id, snapshot=False, transfer=True)
+            else:
+                song_id, song = queue.dequeue()
+            if song is not None and song.internal_url != "alarm":
+                current_song = models.CurrentSong.objects.create(
+                    queue_key=song_id,
+                    occurrence_id=song.occurrence_id,
+                    manually_requested=song.manually_requested,
+                    votes=song.votes,
+                    internal_url=song.internal_url,
+                    external_url=song.external_url,
+                    stream_url=song.stream_url,
+                    artist=song.artist,
+                    title=song.title,
+                    duration=song.duration,
+                    requester_ip=song.requester_ip,
+                    requester_session_key=song.requester_session_key,
+                    requester_token=song.requester_token,
+                    artwork_url=song.artwork_url,
+                    genre=song.genre,
+                )
         if song is None:
-            # either the semaphore didn't match up with the actual count
-            # of songs in the queue or a race condition occured
-            logging.warning("dequeued on empty list")
+            queue_changed.wait()
+            queue_changed.clear()
             return None, False
-
         if song.internal_url == "alarm":
             self.play_alarm()
             return None, False
-
-        # stop backup stream.
-        # when the dequeued song starts playing, the backup stream playback is stopped
         redis.put("backup_playing", False)
-
         assert song.internal_url
-        current_song = models.CurrentSong.objects.create(
-            queue_key=song_id,
-            manually_requested=song.manually_requested,
-            votes=song.votes,
-            internal_url=song.internal_url,
-            external_url=song.external_url,
-            stream_url=song.stream_url,
-            artist=song.artist,
-            title=song.title,
-            duration=song.duration,
-            requester_ip=song.requester_ip,
-            requester_session_key=song.requester_session_key,
-            requester_token=song.requester_token,
-            artwork_url=song.artwork_url,
-            genre=song.genre,
-        )
         cover_source = (
             Path(conf.FURATIC_OBS_OUTPUT_DIR).expanduser()
             / "artwork"
@@ -437,12 +465,15 @@ class Playback:
         except CurrentSong.DoesNotExist:
             return False
 
+        from core import played_history
+        if not redis.get("paused") and self.player().has_started_playback():
+            played_history.mark_started(starting_song)
+
         effective_duration = audio_tail.effective_duration_for_song(starting_song)
         original_duration = float(starting_song.duration or 0.0)
         trim_tail = effective_duration < (original_duration - 0.25)
         transition_fade_seconds = audio_tail.transition_fade_seconds() if trim_tail else 0.0
         fade_started = False
-        last_obs_export_at = 0.0
 
         if trim_tail:
             logging.info(
@@ -459,28 +490,22 @@ class Playback:
                 return False
 
             current_song = CurrentSong.objects.get()
+            paused = redis.get("paused")
+            stop_waiting = False
             try:
-                if self.player().should_stop_waiting(error):
-                    break
+                stop_waiting = self.player().should_stop_waiting(error)
             except PlaybackError:
                 error = True
-            paused = redis.get("paused")
+            if starting_song.playback_started_at is None and not paused and self.player().has_started_playback():
+                played_history.mark_started(starting_song)
+            if stop_waiting:
+                break
             if paused:
                 # stay in the loop, the song won't end while paused
                 # progress = (current_song.last_paused - current_song.created).total_seconds()
                 pass
             else:
                 progress = (timezone.now() - current_song.created).total_seconds()
-                progress_for_display = max(0.0, min(effective_duration, progress))
-
-                now_monotonic = time.monotonic()
-                if now_monotonic - last_obs_export_at >= 1.0:
-                    last_obs_export_at = now_monotonic
-                    obs_export.write_current_song_tick(
-                        current_song,
-                        progress_for_display,
-                        effective_duration,
-                    )
 
                 if trim_tail and not fade_started:
                     fade_start = max(0.0, effective_duration - transition_fade_seconds)
@@ -513,7 +538,7 @@ class Playback:
                 current_song.created += datetime.timedelta(
                     seconds=redis.get("alarm_duration")
                 )
-                current_song.save()
+                current_song.save(update_fields=["created"])
                 playback_state_backup.snapshot()
 
                 return False
@@ -526,20 +551,30 @@ class Playback:
         models.RecentPlay.objects.filter(
             created__lt=timezone.now() - datetime.timedelta(hours=24),
         ).delete()
-        if storage.get("repeat"):
-            queue.enqueue(
-                {
-                    "artist": current_song.artist,
-                    "title": current_song.title,
-                    "duration": current_song.duration,
-                    "internal_url": current_song.internal_url,
-                    "external_url": current_song.external_url,
-                    "stream_url": current_song.stream_url,
-                },
-                False,
-                enqueue_first=False,
-            )
-            queue_changed.set()
+        if self._finish_closing_if_drained():
+            return
+        if storage.get("repeat") and site_mode.accepts_song_requests():
+            from core.musiq.music_provider import ProviderError
+            try:
+                queue.enqueue(
+                    {
+                        "artist": current_song.artist,
+                        "title": current_song.title,
+                        "duration": current_song.duration,
+                        "internal_url": current_song.internal_url,
+                        "external_url": current_song.external_url,
+                        "stream_url": current_song.stream_url,
+                    },
+                    False,
+                    enqueue_first=False,
+                )
+            except ProviderError:
+                if site_mode.accepts_song_requests():
+                    raise
+                if self._finish_closing_if_drained():
+                    return
+            else:
+                queue_changed.set()
 
         if user_manager.partymode_enabled() and random.random() < storage.get(
             "alarm_probability"
@@ -589,20 +624,23 @@ class Playback:
 
             catch_up = self._catch_up(current_song, recovered)
 
-            try:
-                self.player().start_song(current_song, catch_up)
-            except PlaybackError:
-                # when a song can't be started, pause the playback
-                # and have the user restart playback manually after fixing the error
-                musiq.controller._pause()
-                musiq.update_state()
-                continue
-            redis.put("playing", True)
-
-            musiq.update_state()
-
-            # don't wait for the song to end if catch_up is negative (=the song should be skipped)
+            # An expired recovered song must not be started again, even
+            # briefly, before advancing to the next queue entry.
             if catch_up is None or catch_up >= 0:
+                try:
+                    self.player().start_song(current_song, catch_up)
+                except PlaybackError:
+                    # when a song can't be started, pause the playback
+                    # and have the user restart playback manually after fixing the error
+                    musiq.controller._pause()
+                    musiq.update_state()
+                    continue
+                redis.put("playing", True)
+                if not redis.get("paused") and self.player().has_started_playback():
+                    from core import played_history
+                    played_history.mark_started(current_song)
+
+                musiq.update_state()
                 if not self._wait_until_song_end():
                     # there was an error while waiting for the song to end
                     # This happens when we could not connect to mopidy (ConnectionError)
@@ -618,9 +656,17 @@ class Playback:
             redis.put("paused", False)
             redis.put("playing", False)
 
-            current_song.delete()
-
-            queue.promote_oldest_extra(current_song.requester_token)
+            from core import queue_lock
+            with transaction.atomic():
+                queue_lock.acquire()
+                latest = models.CurrentSong.objects.filter(pk=current_song.pk).first()
+                if latest is not None:
+                    current_song = latest
+                    from core import played_history, voting
+                    played_history.record_finished(latest)
+                    voting.retire(latest.occurrence_id)
+                    latest.delete()
+                queue.promote_oldest_extra(current_song.requester_token)
 
             self._song_finished(current_song)
             playback_state_backup.snapshot()
@@ -638,9 +684,18 @@ class Playback:
 
 @app.task
 def _loop() -> None:
-    playback = Playback()
-    playback.loop()
-    connection.close()
+    try:
+        playback = Playback()
+        playback.loop()
+    except Exception:  # pylint: disable=broad-except
+        # HTTP can remain responsive after this background task dies. Let the
+        # supervisor detect that failure without treating idle/paused playback
+        # as unhealthy. The persisted current song and queue remain available.
+        logging.exception("playback worker exited unexpectedly")
+        redis.put("playback_worker_failed", True)
+        raise
+    finally:
+        connection.close()
 
 
 @app.task
@@ -688,6 +743,8 @@ def handle_autoplay(url: Optional[str] = None) -> None:
     """Checks whether to add a song by autoplay and does so if necessary.
     :param url: if given, this url is used to find the next autoplayed song.
     Otherwise, the current song is used."""
+    if not site_mode.accepts_song_requests():
+        return
     if storage.get("autoplay") and models.QueuedSong.objects.count() == 0:
         if url is None:
             # if no url was specified, use the one of the current song
@@ -711,11 +768,20 @@ def handle_autoplay(url: Optional[str] = None) -> None:
         except Exception as error:  # pylint: disable=broad-except
             logging.exception("error during suggestions for %s: %s", url, error)
         else:
+            if not site_mode.accepts_song_requests():
+                return
             provider = SongProvider.create(external_url=suggestion)
-            provider.request("", archive=False, manually_requested=False)
+            from core.musiq.music_provider import ProviderError
+            try:
+                provider.request("", archive=False, manually_requested=False)
+            except ProviderError:
+                if site_mode.accepts_song_requests():
+                    raise
 
 
 def stop() -> None:
     """Stops the playback main loop, only used for tests."""
     redis.put("stop_playback_loop", True)
+    obs_export.stop()
     queue_changed.set()
+

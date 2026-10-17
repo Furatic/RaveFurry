@@ -17,6 +17,8 @@ afterEach(() => {
 });
 
 test('autocomplete list', () => {
+  // Suggestions are disabled by default in the current UI. Enable this fixture explicitly.
+  (global as any).YOUTUBE_SUGGESTIONS = 1;
   autocomplete.onReady();
 
   // this get is called twice, once for online and once for offline suggestions
@@ -47,6 +49,7 @@ test('autocomplete list', () => {
   expect(iconClassesOf(suggestions[2])).toEqual(iconClassesOf(suggestions[6]));
   expect(iconClassesOf(suggestions[3])).toEqual(iconClassesOf(suggestions[7]));
   expect(iconClassesOf(suggestions[4])).toEqual(iconClassesOf(suggestions[8]));
+  (global as any).YOUTUBE_SUGGESTIONS = 0;
 });
 
 test('key retrieval of songs', () => {

@@ -100,6 +100,7 @@ def dashboard(request: WSGIRequest) -> HttpResponse:
     context = base.context(request)
     context.update(
         {
+            "is_admin": user_manager.is_admin(request.user),
             "moderator_login_url": reverse("furatic-login"),
             "moderator_state_url": reverse("moderator-state"),
             "moderator_remove_song_url": reverse("moderator-remove-song"),
@@ -146,17 +147,44 @@ def _moderator_accounts():
 def save_moderator_account(request):
     User = get_user_model()
     account_id = request.POST.get("id", "")
+    if request.POST.get("settings_only") == "true":
+        if not account_id.isdecimal():
+            return HttpResponseBadRequest("Moderator account not found.")
+        user = User.objects.select_for_update().filter(pk=account_id, is_superuser=False, groups__name=user_manager.MODERATOR_GROUP_NAME).first()
+        if user is None:
+            return HttpResponseBadRequest("Moderator account not found.")
+        if any(request.POST.get(field) not in ("true", "false") for field in ("active", "song_only") if field in request.POST):
+            return HttpResponseBadRequest("Invalid moderator access selection.")
+        profile, _ = models.ModeratorProfile.objects.get_or_create(user=user, defaults={"label": user.get_username()})
+        if "active" in request.POST:
+            if request.POST["active"] not in ("true", "false"):
+                return HttpResponseBadRequest("Choose enabled or disabled access.")
+            user.is_active = request.POST["active"] == "true"
+            user.save(update_fields=["is_active"])
+        if "song_only" in request.POST:
+            if request.POST["song_only"] not in ("true", "false"):
+                return HttpResponseBadRequest("Choose a moderator role.")
+            profile.song_only = request.POST["song_only"] == "true"
+            profile.save(update_fields=["song_only"])
+        transaction.on_commit(lambda: audit_log.append("admin_save_moderator", request=request, target=user.get_username(), metadata={"active": user.is_active, "songOnly": profile.song_only}))
+        return JsonResponse({"accounts": _moderator_accounts()})
     username = request.POST.get("username", "").strip()
     label = request.POST.get("label", "").strip()
     password = request.POST.get("password", "")
     if not username or not label:
         return HttpResponseBadRequest("Username and label are required.")
+    if len(username) > User._meta.get_field(User.USERNAME_FIELD).max_length or len(label) > models.ModeratorProfile._meta.get_field("label").max_length:
+        return HttpResponseBadRequest("The username or display label is too long.")
     if password:
         try:
             validate_password(password)
         except ValidationError as error:
             return HttpResponseBadRequest(" ".join(error.messages))
-    user = User.objects.filter(id=account_id).first() if account_id else None
+    if account_id and not account_id.isdecimal():
+        return HttpResponseBadRequest("Moderator account not found.")
+    user = User.objects.select_for_update().filter(id=account_id, groups__name=user_manager.MODERATOR_GROUP_NAME).first() if account_id else None
+    if account_id and user is None:
+        return HttpResponseBadRequest("Moderator account not found.")
     if user and user.is_superuser:
         return HttpResponseBadRequest("The administrator account cannot be edited here.")
     if user is None:
@@ -186,8 +214,11 @@ def save_moderator_account(request):
 @user_manager.admin_required
 @transaction.atomic
 def delete_moderator_account(request):
-    user = get_user_model().objects.filter(
-        id=request.POST.get("id", ""),
+    account_id = request.POST.get("id", "")
+    if not account_id.isdecimal():
+        return HttpResponseBadRequest("Moderator account not found.")
+    user = get_user_model().objects.select_for_update().filter(
+        id=account_id,
         is_superuser=False,
         groups__name=user_manager.MODERATOR_GROUP_NAME,
     ).first()
@@ -445,13 +476,29 @@ def set_site_mode(request: WSGIRequest) -> HttpResponse:
     if mode not in site_mode.VALID_MODES:
         return HttpResponseBadRequest("Invalid site mode")
 
-    selected_mode = site_mode.set_mode(mode)
+    from core import queue_lock, voting
+    from core.musiq import next_up
+
+    with transaction.atomic():
+        queue_lock.acquire()
+        if mode == site_mode.CLOSING_MODE:
+            pre_queue = list(playback.queue.filter(priority_tier="extra").values("id", "occurrence_id"))
+            for song in pre_queue:
+                user_manager.release_queue_slot_for_song(song["id"])
+                next_up.clear_if_locked(song["id"])
+                voting.retire(song["occurrence_id"])
+            playback.queue.filter(priority_tier="extra").delete()
+            playback.queue.rebalance_priorities()
+        selected_mode = site_mode.set_mode(mode)
     audit_log.append("moderator_set_site_mode", request=request, target=selected_mode)
 
     if selected_mode == site_mode.AFTER_HOURS_MODE:
         playback.request_operator_command("pause_for_afterhours")
     else:
         playback.request_operator_command("resume_from_afterhours")
+
+    if selected_mode == site_mode.CLOSING_MODE:
+        musiq.update_state()
 
     return JsonResponse({"mode": selected_mode})
 

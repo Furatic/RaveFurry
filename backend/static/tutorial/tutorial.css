@@ -1,0 +1,75 @@
+/* The practice player uses musiq_embed.html and its production CSS unchanged. */
+#tutorial-toggle svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.player-layout.is-tv-open #tutorial-toggle { opacity: 1; pointer-events: auto; filter: none; transform: none; }
+.ft-dialog { position: fixed; inset: 0; width: 100%; max-width: none; height: 100%; max-height: none; margin: 0; border: 0;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  color: var(--text, #eef4ff); background: rgba(3,5,12,.94); font-family: inherit; overflow: hidden; overscroll-behavior: contain; }
+.ft-dialog[open] { display: grid; place-items: center; }
+.ft-dialog:not([open]), .ft-dialog [hidden] { display: none !important; }
+.ft-dialog::backdrop { background: transparent; }
+.ft-dialog *, .ft-dialog *::before, .ft-dialog *::after { box-sizing: border-box; }
+.ft-panel { display: flex; flex-direction: column; width: min(100%, 600px); max-height: 100%; min-height: 0; overflow: hidden;
+  border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: var(--radius, 30px); background: #091022; }
+.ft-dialog.ft-is-lesson .ft-panel { width: min(100%, 1160px); height: min(100%, 920px); }
+.ft-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px 12px; flex: 0 0 auto; }
+.ft-header h2 { font: inherit; font-size: 23px; font-weight: 700; line-height: 1.25; margin: 0; }
+.ft-header h2:focus { outline: none; }
+.ft-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 46px; padding: 10px 18px;
+  border-radius: 16px; color: var(--text, #eef4ff); border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06);
+  font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; touch-action: manipulation;
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease, opacity 180ms ease; }
+.ft-button:hover { background: rgba(255,255,255,.09); border-color: rgba(255,255,255,.18); }
+.ft-button:active { transform: scale(.98); }
+.ft-button:disabled { cursor: default; opacity: .55; }
+.ft-button:focus-visible { outline: 2px solid #92d9ff; outline-offset: 3px; }
+.ft-close { width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; flex: 0 0 44px; }
+.ft-close svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.ft-hub { overflow: auto; padding: 0 22px 24px; }
+.ft-hub p { line-height: 1.6; margin: 4px 0 20px; }
+.ft-topics { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin-bottom: 20px; }
+.ft-topics .ft-button { min-height: 66px; text-align: left; justify-content: flex-start; font-size: 15px; }
+.ft-small { color: var(--muted, rgba(238,244,255,.72)); font-size: 12px; line-height: 1.5; }
+.ft-hub > .ft-button { width: 100%; }
+.ft-lesson { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.ft-narrator { display: flex; align-items: center; gap: 12px; padding: 0 22px 14px; flex: 0 0 auto; }
+.ft-narrator-portrait { position: relative; width: 80px; height: 80px; flex: 0 0 80px; overflow: hidden; }
+/* Keep the PNG's transparent padding from making the character look small. */
+.ft-narrator img { position: absolute; left: 50%; top: 50%; width: 112px; height: 112px; max-width: none; max-height: none;
+  object-fit: contain; transform: translate(-50%, -50%); }
+.ft-narrator p { font-size: 14px; line-height: 1.55; margin: 0; }
+.ft-player-region { position: relative; flex: 1 1 auto; min-height: 120px; margin: 0 10px; }
+.ft-player { display: block; width: 100%; height: 100%; border: 0; opacity: 0; transition: opacity 300ms ease; }
+.ft-player.ft-ready { opacity: 1; }
+#ft-loading { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--muted); font-size: 14px; }
+.ft-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 22px 6px; flex: 0 0 auto; }
+.ft-practice-note { text-align: center; color: var(--muted, rgba(238,244,255,.72)); font-size: 11px; line-height: 1.4; margin: 5px 12px 12px; flex: 0 0 auto; }
+@media (max-width: 600px) {
+  .ft-dialog { padding: max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left)); }
+  .ft-header { padding: 12px 14px 10px; gap: 10px; }
+  .ft-header h2 { font-size: 19px; }
+  .ft-hub { padding: 0 16px 18px; }
+  .ft-topics { grid-template-columns: minmax(0,1fr); gap: 9px; }
+  .ft-topics .ft-button { min-height: 52px; }
+  .ft-narrator { padding: 0 14px 10px; gap: 9px; }
+  .ft-narrator p { font-size: 12px; }
+  .ft-narrator-portrait { width: 64px; height: 64px; flex-basis: 64px; }
+  .ft-narrator img { width: 88px; height: 88px; }
+  .ft-player-region { margin: 0; }
+  .ft-footer { padding: 8px 12px 2px; gap: 6px; flex-wrap: wrap; }
+  .ft-footer .ft-button { padding: 9px 11px; font-size: 12px; min-height: 42px; }
+  .ft-practice-note { font-size: 10px; margin-bottom: 8px; }
+}
+.ft-dialog.ft-short .ft-narrator { max-height: 23%; overflow: auto; }
+.ft-idle-arrow { position: fixed; width: 45px; height: 45px; z-index: 10000; pointer-events: none; opacity: 0;
+  transition: opacity 260ms ease; }
+.ft-idle-arrow.is-visible { opacity: 1; }
+.ft-arrow-visual { display: block; position: relative; width: 100%; height: 100%; transform-origin: right center; }
+.ft-arrow-visual::before { content: ''; position: absolute; inset: -8px; border-radius: 50%;
+  background: rgba(5,12,26,.9); box-shadow: 0 3px 14px rgba(0,0,0,.35);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.ft-idle-arrow svg { display: block; width: 100%; height: 100%; fill: none; stroke: #92d9ff; stroke-width: 3;
+  position: relative; stroke-linecap: round; stroke-linejoin: round; }
+.ft-idle-arrow.is-visible .ft-arrow-visual { animation: ft-arrow-breathe 2.4s ease-in-out infinite; }
+@keyframes ft-arrow-breathe { 0%, 100% { transform: scale(.82); } 50% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .ft-idle-arrow { transition: none; } .ft-idle-arrow.is-visible .ft-arrow-visual { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .ft-dialog *, .ft-dialog *::before, .ft-dialog *::after { transition: none !important; animation: none !important; } }

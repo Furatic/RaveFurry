@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import random
 from typing import TYPE_CHECKING, Optional, Tuple
 
 from django.db import models, transaction
 from django.db.models import F, QuerySet
 
 import core.models
+from core import queue_lock
 
 if TYPE_CHECKING:
     from core.models import QueuedSong
@@ -28,7 +28,8 @@ class SongQueue(models.Manager):
 
     @transaction.atomic
     def rebalance_priorities(self) -> None:
-        """Keep normal songs first and fairly round-robin overflow by requester."""
+        """Keep normal songs first and stably round-robin overflow by requester."""
+        queue_lock.acquire()
         # Every enqueue may rewrite overflow positions. Lock queue rows in one
         # deterministic order to prevent cross-user submissions deadlocking.
         list(self.select_for_update().order_by("id").values_list("id", flat=True))
@@ -36,8 +37,9 @@ class SongQueue(models.Manager):
         grouped = {}
         for song in self.filter(priority_tier="extra").order_by("id"):
             grouped.setdefault(song.requester_token or f"song:{song.id}", []).append(song)
+        # Preserve the order of each requester's oldest waiting extra. Repeated
+        # submissions/state updates must not randomly change the Auto Queue.
         requester_order = list(grouped)
-        random.shuffle(requester_order)
         extra = []
         while requester_order:
             next_round = []
@@ -54,6 +56,10 @@ class SongQueue(models.Manager):
     @transaction.atomic
     def promote_oldest_extra(self, requester_token: str) -> None:
         """Promote this requester's oldest overflow song, if one exists."""
+        queue_lock.acquire()
+        from core import site_mode
+        if site_mode.is_closing():
+            return
         if not requester_token or self.filter(
             requester_token=requester_token,
             priority_tier="normal",
@@ -67,7 +73,12 @@ class SongQueue(models.Manager):
         ).order_by("id").first()
         if overflow:
             overflow.priority_tier = "normal"
-            overflow.save(update_fields=["priority_tier"])
+            # Join behind the existing main queue even if a moderator previously
+            # reordered the Auto Queue. Voting/next-up ordering remains intact.
+            overflow.index = (
+                self.aggregate(last_index=models.Max("index"))["last_index"] or 0
+            ) + 1
+            overflow.save(update_fields=["priority_tier", "index"])
             self.rebalance_priorities()
 
     @transaction.atomic
@@ -76,10 +87,29 @@ class SongQueue(models.Manager):
         Confirmed songs are not in the process of being made available."""
         return self.exclude(internal_url=None)
 
+    def playable(self) -> QuerySet[QueuedSong]:
+        """Auto Queue songs must be promoted before any playback path selects them."""
+        return self.confirmed().filter(
+            priority_tier="normal", review_status__in=["clear", "approved"]
+        )
+
     @transaction.atomic
     def delete_placeholders(self) -> None:
         """Deletes all songs from the queue that are not confirmed."""
+        queue_lock.acquire()
+        from core import voting
+        affected_requesters = list(
+            self.filter(internal_url=None, priority_tier="normal")
+            .exclude(requester_token="")
+            .order_by()
+            .values_list("requester_token", flat=True)
+            .distinct()
+        )
+        for occurrence in self.filter(internal_url=None).values_list("occurrence_id", flat=True):
+            voting.retire(occurrence)
         self.filter(internal_url=None).delete()
+        for requester in affected_requesters:
+            self.promote_oldest_extra(requester)
         _snapshot_after_commit()
 
     @transaction.atomic
@@ -93,6 +123,14 @@ class SongQueue(models.Manager):
         requester_session_key: str = "",
     ) -> QueuedSong:
         """Creates a new song at the end of the queue and returns it."""
+        queue_lock.acquire()
+        from core import site_mode
+        if not site_mode.accepts_song_requests():
+            from core.musiq.music_provider import ProviderError
+            raise ProviderError(
+                "Closing time: we are no longer accepting new songs. Thanks for coming!"
+                if site_mode.is_closing() else "FURATIC is currently in After Hours mode."
+            )
         last = self.last()
         index = 1 if last is None else last.index + 1
         song = self.create(
@@ -116,18 +154,19 @@ class SongQueue(models.Manager):
     @transaction.atomic
     def dequeue(self) -> Tuple[int, Optional["QueuedSong"]]:
         """Removes the first completed song from the queue and returns its id and the object."""
+        queue_lock.acquire()
         from core import user_manager
         from core.musiq import next_up
 
-        eligible = self.confirmed().filter(review_status__in=["clear", "approved"])
+        eligible = self.playable()
         locked_key = next_up.get_locked_queue_key()
         if locked_key is not None:
             song = eligible.filter(id=locked_key).first()
             if song is None:
                 next_up.clear_locked_queue_key()
-                song = eligible.filter(priority_tier="normal").first() or eligible.first()
+                song = eligible.first()
         else:
-            song = eligible.filter(priority_tier="normal").first() or eligible.first()
+            song = eligible.first()
 
         if song is None:
             return -1, None
@@ -143,6 +182,7 @@ class SongQueue(models.Manager):
     @transaction.atomic
     def prioritize(self, key: int) -> None:
         """Moves the song specified by :param key: to the front of the queue."""
+        queue_lock.acquire()
         from core.musiq import next_up
 
         locked_key = next_up.get_locked_queue_key()
@@ -162,6 +202,7 @@ class SongQueue(models.Manager):
     @transaction.atomic
     def deprioritize(self, key: int) -> None:
         """Moves the song specified by :param key: to the end of the queue."""
+        queue_lock.acquire()
         to_deprioritize = self.get(id=key)
         last = self.last()
         if to_deprioritize == last:
@@ -173,8 +214,9 @@ class SongQueue(models.Manager):
         _snapshot_after_commit()
 
     @transaction.atomic
-    def remove(self, key: int, snapshot: bool = True) -> "QueuedSong":
+    def remove(self, key: int, snapshot: bool = True, transfer: bool = False) -> "QueuedSong":
         """Removes the song specified by :param key: from the queue and returns it."""
+        queue_lock.acquire()
         from core import user_manager
         from core.musiq import next_up
 
@@ -185,8 +227,11 @@ class SongQueue(models.Manager):
         next_up.clear_if_locked(key)
         to_remove.delete()
         self.filter(index__gt=to_remove.index).update(index=F("index") - 1)
-        if was_normal:
+        if was_normal and not transfer:
             self.promote_oldest_extra(requester_token)
+        if not transfer:
+            from core import voting
+            voting.retire(to_remove.occurrence_id)
         if snapshot:
             _snapshot_after_commit()
         return to_remove
@@ -197,6 +242,7 @@ class SongQueue(models.Manager):
     ) -> None:
         """Moves the song specified by :param element_id:
         between the two songs :param new_prev_id: and :param new_next_id:."""
+        queue_lock.acquire()
 
         new_prev = self.filter(id=new_prev_id).first()
         try:
@@ -263,19 +309,10 @@ class SongQueue(models.Manager):
         _snapshot_after_commit()
 
     @transaction.atomic
-    def shuffle(self) -> None:
-        """Assigns a random index to every song in the queue."""
-        indices = list(range(1, self.count() + 1))
-        random.shuffle(indices)
-        for song, index in zip(self.all(), indices):
-            song.index = index
-            song.save()
-        _snapshot_after_commit()
-
-    @transaction.atomic
     def vote(self, key: int, amount: int, threshold: int) -> Optional["QueuedSong"]:
         """Modify the vote-count of the song specified by :param key: by :param amount: votes.
         If the song is now below the threshold, remove and return it."""
+        queue_lock.acquire()
         from core import user_manager
         from core.musiq import next_up
 
@@ -284,10 +321,7 @@ class SongQueue(models.Manager):
         try:
             song = self.get(id=key)
             if song.votes <= threshold:
-                user_manager.release_queue_slot_for_song(key)
-                next_up.clear_if_locked(key)
-                song.delete()
-                return song
+                return self.remove(key)
         except core.models.QueuedSong.DoesNotExist:
             pass
         return None

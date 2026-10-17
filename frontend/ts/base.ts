@@ -60,7 +60,7 @@ export function localStorageRemove(key) {
  * @param {string} firstLine the main content of the toast
  * @param {string} [secondLine] an optional second line to be shown
  */
-export function infoToast(firstLine, secondLine?) {
+export function infoToast(firstLine, secondLine?, duration = toastTimeout) {
   $('#info-toast').find('.toast-content').text(firstLine);
   $('#info-toast').find('.toast-content').text(firstLine);
   if (secondLine != null) {
@@ -73,11 +73,11 @@ export function infoToast(firstLine, secondLine?) {
   $('#info-toast').fadeIn();
   currentToastId++;
   const showedToastId = currentToastId;
-  setTimeout(function() {
+  if (duration > 0) setTimeout(function() {
     if (showedToastId == currentToastId) {
       $('#info-toast').fadeOut();
     }
-  }, toastTimeout);
+  }, duration);
 }
 
 /** Shows a toast to inform the user that something happened successfully.
@@ -445,6 +445,7 @@ export function handleUpdateBanner() {
 
 /** General setup of the page. */
 export function onReady() {
+  if ((window as any).FURATIC_TUTORIAL_PLAYER) return;
   if (localStorageGet('raveberry-theme') == 'light') {
     toggleTheme();
   }
