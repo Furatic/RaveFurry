@@ -40,6 +40,10 @@ def record_completed_song() -> bool:
         return False
 
     interval = int(storage.get("maintenance_restart_song_interval"))
+    if interval == 20:
+        # Existing installations may restore the old interval from DB or disk.
+        interval = 70
+        storage.put("maintenance_restart_song_interval", interval)
     if interval <= 0:
         return False
 
